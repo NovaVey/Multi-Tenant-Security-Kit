@@ -52,12 +52,10 @@ export function createTenantMiddleware<Req extends MinimalRequest = MinimalReque
   const onMissing =
     options.onMissing ??
     ((_req: Req, res: MinimalResponse, _next: NextFunction) => {
-      res
-        .status(400)
-        .json({
-          error: 'tenant_required',
-          message: 'No tenant could be resolved for this request.',
-        });
+      res.status(400).json({
+        error: 'tenant_required',
+        message: 'No tenant could be resolved for this request.',
+      });
     });
 
   return (req, res, next) => {

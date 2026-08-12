@@ -5,7 +5,11 @@ import eslintConfigPrettier from 'eslint-config-prettier';
 
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'coverage/**', 'node_modules/**', 'examples/**/dist/**'],
+    // examples/ is illustrative documentation code (imports `express`, which
+    // is not a dependency of this package) — excluded from lint/typecheck
+    // the same way dist/coverage/node_modules are, rather than pulled into
+    // the project's strict TS project just to satisfy the linter.
+    ignores: ['dist/**', 'coverage/**', 'node_modules/**', 'examples/**'],
   },
   js.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,

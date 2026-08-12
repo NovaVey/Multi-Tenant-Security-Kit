@@ -1,0 +1,145 @@
+import { AuditSinkError } from '../errors.js';
+import { getCurrentTenantId } from '../tenant/context.js';
+import type { AuditEvent, AuditSink } from './types.js';
+
+/**
+ * What a caller provides to {@link AuditLogger.log}.
+ *
+ * Omits `timestamp` (always stamped by the logger, so callers can never
+ * accidentally backdate or forget it) and re-declares `tenantId` as
+ * optional-and-defaultable: when omitted, {@link AuditLogger.log} falls back
+ * to {@link getCurrentTenantId}, so call sites inside a tenant-scoped
+ * request don't need to thread the tenant id through manually.
+ */
+export type AuditEventInput = Omit<AuditEvent, 'timestamp' | 'tenantId'> & { tenantId?: string };
+
+/** Configuration for an {@link AuditLogger}. */
+export interface AuditLoggerOptions {
+  /** Every sink this logger writes each event to. */
+  sinks: AuditSink[];
+  /**
+   * Called when a sink fails to write an event (synchronous throw or
+   * rejected promise), instead of throwing out of {@link AuditLogger.log}.
+   * Defaults to `console.error(error)`. Wire this up to your own alerting
+   * if audit-delivery failures need to page someone.
+   */
+  onSinkError?: (error: AuditSinkError) => void;
+  /**
+   * Optional transform applied to every event before it reaches any sink,
+   * e.g. to strip secrets or PII out of `metadata`. Runs once per `log()`
+   * call (not once per sink), so all sinks see the same redacted event.
+   */
+  redact?: (event: AuditEvent) => AuditEvent;
+}
+
+const defaultOnSinkError = (error: AuditSinkError): void => {
+  console.error(error);
+};
+
+/**
+ * Fans a single audit event out to every configured {@link AuditSink}.
+ *
+ * The core guarantee this class exists to provide is isolation: a bug or
+ * outage in one sink (a webhook timing out, a queue being unreachable) must
+ * never prevent other sinks from receiving the event, and must never
+ * propagate an exception back to whatever business logic called
+ * {@link log} — audit logging is inherently best-effort side work, and a
+ * failure in it should never take down the request it's describing.
+ */
+export class AuditLogger {
+  private readonly sinks: readonly AuditSink[];
+  private readonly onSinkError: (error: AuditSinkError) => void;
+  private readonly redact: ((event: AuditEvent) => AuditEvent) | undefined;
+
+  /**
+   * Fields merged underneath every event passed to `log()`, set by
+   * {@link child}. Not part of the public constructor contract — always
+   * empty for loggers created directly via `new AuditLogger(options)`.
+   */
+  private readonly defaults: Partial<AuditEventInput>;
+
+  constructor(options: AuditLoggerOptions, defaults: Partial<AuditEventInput> = {}) {
+    this.sinks = options.sinks;
+    this.onSinkError = options.onSinkError ?? defaultOnSinkError;
+    this.redact = options.redact;
+    this.defaults = defaults;
+  }
+
+  /**
+   * Records one audit event.
+   *
+   * Resolution order for the fields this method fills in:
+   *  - `timestamp` is always set to `new Date().toISOString()` at call time.
+   *  - `tenantId` uses, in order: an explicit value on `event`, then this
+   *    logger's `child()` defaults, then the ambient tenant context via
+   *    {@link getCurrentTenantId}. It's left `undefined` if none apply —
+   *    audit events outside any tenant context are still valid (e.g.
+   *    platform-level actions).
+   *
+   * If `redact` was configured, it runs once on the fully-resolved event
+   * before any sink sees it. Every sink then receives the same event; a
+   * sink that throws synchronously or returns a rejected promise has its
+   * error wrapped in {@link AuditSinkError} and handed to `onSinkError` —
+   * this method itself never throws and never returns a rejected promise.
+   */
+  log(event: AuditEventInput): void {
+    const { tenantId: explicitTenantId, ...rest } = { ...this.defaults, ...event };
+    const tenantId = explicitTenantId ?? getCurrentTenantId();
+    const resolvedEvent: AuditEvent = {
+      ...rest,
+      timestamp: new Date().toISOString(),
+      ...(tenantId !== undefined ? { tenantId } : {}),
+    };
+    const finalEvent = this.redact ? this.redact(resolvedEvent) : resolvedEvent;
+
+    for (const sink of this.sinks) {
+      this.writeToSink(sink, finalEvent);
+    }
+  }
+
+  /**
+   * Returns a new `AuditLogger` sharing this logger's sinks, `onSinkError`,
+   * and `redact`, whose `log()` merges `defaults` underneath each call's
+   * own fields — explicit fields on a given `log()` call always win over
+   * the child's defaults. Handy for a per-request logger that should always
+   * stamp e.g. a fixed `actorId` without every call site repeating it.
+   */
+  child(defaults: Partial<AuditEventInput>): AuditLogger {
+    return new AuditLogger(
+      {
+        sinks: [...this.sinks],
+        onSinkError: this.onSinkError,
+        ...(this.redact ? { redact: this.redact } : {}),
+      },
+      { ...this.defaults, ...defaults },
+    );
+  }
+
+  /**
+   * Writes to a single sink, converting any synchronous throw or promise
+   * rejection into an `onSinkError` call rather than letting it escape.
+   */
+  private writeToSink(sink: AuditSink, event: AuditEvent): void {
+    try {
+      const result = sink.write(event);
+      if (result instanceof Promise) {
+        result.catch((cause: unknown) => {
+          this.reportSinkError(sink, cause);
+        });
+      }
+    } catch (cause) {
+      this.reportSinkError(sink, cause);
+    }
+  }
+
+  private reportSinkError(sink: AuditSink, cause: unknown): void {
+    const sinkName = sink.constructor.name;
+    const error = new AuditSinkError(sinkName, { cause });
+    try {
+      this.onSinkError(error);
+    } catch {
+      // A caller-provided onSinkError must never be able to break the
+      // "log() never throws" guarantee either.
+    }
+  }
+}
