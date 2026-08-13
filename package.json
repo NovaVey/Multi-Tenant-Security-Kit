@@ -75,6 +75,10 @@
     },
     "./package.json": "./package.json"
   },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
@@ -93,6 +97,7 @@
     "prepublishOnly": "npm run verify"
   },
   "devDependencies": {
+    "@changesets/cli": "^3.0.0",
     "@eslint/js": "^10.0.1",
     "@testcontainers/postgresql": "^12.1.0",
     "@types/express": "^5.0.6",

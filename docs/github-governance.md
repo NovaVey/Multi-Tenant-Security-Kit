@@ -9,7 +9,7 @@ to `main`.
 
 This repo is set up at the **Standard** governance tier: required CI checks
 and one review before merge, with the security audit job kept advisory
-rather than blocking. Step 6 describes the upgrade path to a stricter tier.
+rather than blocking. Step 7 describes the upgrade path to a stricter tier.
 
 ## Step 1 — General settings
 
@@ -36,7 +36,7 @@ Create a rule targeting `main` with:
     (uncheck "Merge commit" and "Rebase", leave only "Squash" checked) —
     keeps `main`'s history one commit per PR, which matters for an
     easily-auditable security library and for `dependabot-auto-merge.yml`
-    (Step 4) always squashing.
+    (Step 5) always squashing.
 - **Require status checks to pass before merging**
   - **Require branches to be up to date before merging**
   - Once each check has run at least once on a PR (open any PR to trigger
@@ -56,7 +56,7 @@ Create a rule targeting `main` with:
     `test (18.18.0)`** if it's still checked.
   - Do **not** add `security-audit` to this list — it's intentionally
     advisory (`continue-on-error: true` in the workflow) under the Standard
-    tier this repo uses. See Step 6 for the upgrade path.
+    tier this repo uses. See Step 7 for the upgrade path.
 - **Require conversation resolution before merging**
 - Disallow force pushes to `main`.
 - Disallow branch deletion.
@@ -71,13 +71,27 @@ Create a secret named exactly **`NPM_TOKEN`**, containing an npm
 **Automation** access token with publish rights to the `@novavey` scope.
 
 This is required before `.github/workflows/release.yml` can run
-successfully — without it, the `npm publish` step fails authentication on
-the first tagged release.
+successfully — without it, the `npm publish` step (run via `changesets/action`,
+itself triggered by pushes to `main` — see `CONTRIBUTING.md`'s "How a
+release happens") fails authentication.
 
 Reminder: the npm org/scope `@novavey` must already exist on npmjs.com, and
 the npm account generating the token must have publish rights to it.
 
-## Step 4 — Enable Dependabot auto-merge
+## Step 4 — Allow the release workflow to open PRs
+
+**Settings -> Actions -> General -> Workflow permissions -> check "Allow
+GitHub Actions to create and approve pull requests"**
+
+Release automation (`.github/workflows/release.yml`, via `changesets/action`)
+opens and updates a "Version Packages" PR whenever a changeset lands on
+`main`. This repo-level setting is off by default; without it, that step
+fails with a permissions error and no Version Packages PR ever appears,
+silently stalling every release. Not part of any Ruleset — a separate
+toggle under General settings, in the same place Actions' default
+`GITHUB_TOKEN` permissions live.
+
+## Step 5 — Enable Dependabot auto-merge
 
 **Settings -> General -> Pull Requests -> check "Allow auto-merge"**
 
@@ -106,7 +120,7 @@ required check. It also auto-approves the low-risk subset it merges, purely
 so the workflow keeps working unmodified if you ever raise required
 approvals above 0; it has no effect while approvals are 0.
 
-## Step 5 — Code security and analysis
+## Step 6 — Code security and analysis
 
 **Settings -> Code security and analysis**
 
@@ -117,7 +131,7 @@ approvals above 0; it has no effect while approvals are 0.
 - Enable **Secret scanning** and **Push protection**, if available on your
   plan.
 
-## Step 6 — Upgrade path
+## Step 7 — Upgrade path
 
 If this project's risk profile grows (more contributors, wider adoption,
 handling sensitive data), consider moving further toward a stricter

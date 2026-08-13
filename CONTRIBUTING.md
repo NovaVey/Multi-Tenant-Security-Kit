@@ -95,17 +95,30 @@ Common prefixes: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`.
 
 ## How a release happens
 
-Releases are cut by a maintainer, not by contributors:
+Releases are driven by [Changesets](https://github.com/changesets/changesets),
+not by a maintainer manually bumping `package.json` and pushing a git tag:
 
-1. A maintainer bumps the `version` field in `package.json` following
-   [semver](https://semver.org/), and merges that change to `main`.
-2. The maintainer pushes a matching git tag, e.g. `v0.2.0`.
-3. Pushing the tag triggers [`.github/workflows/release.yml`](./.github/workflows/release.yml),
-   which runs the full verify gate, publishes the package to npm, and cuts a
-   GitHub Release automatically.
+1. **If your PR changes anything published in the npm package**, run
+   `npx changeset` and follow the prompts (which kind of bump —
+   `patch`/`minor`/`major` — and a short summary). Commit the generated
+   `.changeset/*.md` file as part of your PR. Purely internal changes
+   (tests, CI, tooling, docs that aren't shipped) don't need one.
+2. On every push to `main`, [`.github/workflows/release.yml`](./.github/workflows/release.yml)
+   runs the full verify gate, then hands off to `changesets/action`, which
+   keeps a **"Version Packages"** PR up to date with every merged
+   changeset's version bump.
+3. A maintainer reviews that PR — adding the real `CHANGELOG.md` entry by
+   hand (changelog generation is deliberately off in
+   [`.changeset/config.json`](./.changeset/config.json); see
+   [`.changeset/README.md`](./.changeset/README.md)) — and merges it.
+4. That merge triggers the release workflow again; with no pending
+   changesets left and a version bump not yet on npm, it publishes with
+   provenance, pushes the matching `vX.Y.Z` git tag, and creates a GitHub
+   Release — all automatically, no manual tagging step.
 
-Contributors don't need to do anything release-related — just get changes
-merged to `main`.
+Contributors' only release-related job is adding a changeset when their
+change needs one; everything else is automatic once a maintainer merges
+the Version Packages PR.
 
 ## Reporting bugs / requesting features
 
