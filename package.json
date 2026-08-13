@@ -1,0 +1,104 @@
+{
+  "name": "@novavey/multi-tenant-security-kit",
+  "version": "0.1.0",
+  "description": "A framework-agnostic toolkit for building secure multi-tenant applications: tenant isolation, RBAC, per-tenant rate limiting, audit logging, Postgres row-level security helpers, and per-tenant encryption.",
+  "keywords": [
+    "multi-tenant",
+    "security",
+    "tenant-isolation",
+    "rbac",
+    "rate-limiting",
+    "audit-log",
+    "row-level-security",
+    "encryption",
+    "typescript"
+  ],
+  "homepage": "https://github.com/NovaVey/multi-tenant-security-kit#readme",
+  "bugs": {
+    "url": "https://github.com/NovaVey/multi-tenant-security-kit/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NovaVey/multi-tenant-security-kit.git"
+  },
+  "license": "MIT",
+  "author": "Tyler Pepitone / Nova Vey Engineering",
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20.19"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./tenant": {
+      "types": "./dist/tenant/index.d.ts",
+      "import": "./dist/tenant/index.js",
+      "require": "./dist/tenant/index.cjs"
+    },
+    "./rbac": {
+      "types": "./dist/rbac/index.d.ts",
+      "import": "./dist/rbac/index.js",
+      "require": "./dist/rbac/index.cjs"
+    },
+    "./rate-limit": {
+      "types": "./dist/rate-limit/index.d.ts",
+      "import": "./dist/rate-limit/index.js",
+      "require": "./dist/rate-limit/index.cjs"
+    },
+    "./audit": {
+      "types": "./dist/audit/index.d.ts",
+      "import": "./dist/audit/index.js",
+      "require": "./dist/audit/index.cjs"
+    },
+    "./rls": {
+      "types": "./dist/rls/index.d.ts",
+      "import": "./dist/rls/index.js",
+      "require": "./dist/rls/index.cjs"
+    },
+    "./crypto": {
+      "types": "./dist/crypto/index.d.ts",
+      "import": "./dist/crypto/index.js",
+      "require": "./dist/crypto/index.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit",
+    "verify": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build",
+    "prepublishOnly": "npm run verify"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^20.14.0",
+    "@vitest/coverage-v8": "^4.1.10",
+    "eslint": "^10.8.1",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.9.6",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.67.0",
+    "vitest": "^4.1.10"
+  }
+}

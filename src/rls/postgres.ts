@@ -1,0 +1,241 @@
+/**
+ * Generates Postgres row-level-security (RLS) SQL text and
+ * parameterized-query fragments for enforcing tenant isolation at the
+ * database layer.
+ *
+ * This module is deliberately dependency-free with respect to Postgres
+ * client libraries (no `pg`, no `postgres`, no ORM): it only ever returns
+ * strings. That keeps it usable from any migration tool or query builder
+ * regardless of which driver a consumer has chosen, and keeps this package's
+ * dependency footprint unchanged for consumers who never touch Postgres.
+ *
+ * ---
+ *
+ * SECURITY MODEL — read before modifying this file.
+ *
+ * Two very different kinds of values flow through this module, and they are
+ * handled in opposite ways on purpose:
+ *
+ * 1. **Identifiers** (table names, column names, policy names, role names,
+ *    session-setting/GUC names). These are developer-supplied at
+ *    migration-authoring time, not end-user input at request time. Even so,
+ *    generated migrations are routinely copy-pasted, re-templated, or built
+ *    from config files, so we do not trust that "developer-supplied" implies
+ *    "safe to splice into SQL". Every identifier accepted by this module is
+ *    validated against a strict `^[a-zA-Z_][a-zA-Z0-9_]*$` allowlist pattern
+ *    before it is used, and a failing value causes an immediate `TypeError`
+ *    naming both the offending value and which parameter rejected it. Every
+ *    identifier is *also* double-quoted in the emitted SQL as defense in
+ *    depth, so even a hypothetical future relaxation of the validation still
+ *    can't be used to inject bare SQL keywords.
+ *
+ * 2. **The tenant id value** itself — the thing a real request actually
+ *    carries — is genuine runtime user input. It is NEVER interpolated into
+ *    any string this module returns. {@link generateSetTenantContextSql}
+ *    only ever emits the placeholder `$1`; callers must bind the real tenant
+ *    id through their driver's parameterized-query mechanism (e.g.
+ *    `client.query(sql, [tenantId])`). This is the load-bearing security
+ *    property of this module — do not "simplify" it by accepting the tenant
+ *    id as a function parameter and interpolating it.
+ */
+
+import type { RlsPolicyOptions } from './types.js';
+
+/** Strict allowlist for a single unquoted SQL identifier segment. */
+const IDENTIFIER_PATTERN = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+
+/**
+ * Validates that `value` is safe to use as a SQL identifier, throwing a
+ * `TypeError` that names both the offending value and the parameter it came
+ * from if not.
+ *
+ * This is the single choke point every identifier accepted by this module
+ * passes through — table names, column names, policy names, role names, and
+ * (via {@link assertValidSessionSetting}) each dot-separated segment of a
+ * Postgres GUC name. Centralizing it means the allowlist pattern and error
+ * shape can't drift between entry points.
+ */
+function assertValidIdentifier(value: string, paramName: string): void {
+  if (typeof value !== 'string' || !IDENTIFIER_PATTERN.test(value)) {
+    throw new TypeError(
+      `Invalid SQL identifier for "${paramName}": ${JSON.stringify(value)}. ` +
+        `Identifiers must match ${IDENTIFIER_PATTERN.toString()}.`,
+    );
+  }
+}
+
+/**
+ * Validates a Postgres session-setting (GUC) name such as
+ * `"app.current_tenant_id"`. GUC names are conventionally dot-separated, so
+ * this validates each segment independently against the same identifier
+ * allowlist rather than allowing dots to widen the pattern globally — a
+ * value like `users; DROP TABLE users;--` still has no segment that matches.
+ */
+function assertValidSessionSetting(value: string, paramName: string): void {
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new TypeError(`Invalid SQL identifier for "${paramName}": ${JSON.stringify(value)}.`);
+  }
+  const segments = value.split('.');
+  for (const segment of segments) {
+    assertValidIdentifier(segment, paramName);
+  }
+}
+
+/** Double-quotes an already-validated identifier for safe interpolation into SQL text. */
+function quoteIdentifier(value: string): string {
+  return `"${value}"`;
+}
+
+/**
+ * Generates the SQL to enable *and force* row-level security on `table`.
+ *
+ * Forcing RLS (`FORCE ROW LEVEL SECURITY`) is easy to forget and is a common
+ * multi-tenant footgun: without it, the table owner — which is frequently
+ * the same role a migration or admin job connects as — silently bypasses
+ * every RLS policy on the table, defeating tenant isolation exactly when
+ * it's most likely to matter (privileged batch jobs, ORM migrations,
+ * support tooling). This function always emits both statements together so
+ * that outcome requires deliberately dropping the second line, not simply
+ * forgetting a flag.
+ *
+ * @throws {TypeError} if `table` is not a valid SQL identifier.
+ */
+export function generateEnableRlsSql(table: string): string {
+  assertValidIdentifier(table, 'table');
+  const quoted = quoteIdentifier(table);
+  return `ALTER TABLE ${quoted} ENABLE ROW LEVEL SECURITY;\nALTER TABLE ${quoted} FORCE ROW LEVEL SECURITY;`;
+}
+
+/**
+ * Generates a `CREATE POLICY` statement that restricts `options.table` to
+ * rows whose tenant column matches the tenant id currently set on
+ * `options.sessionSetting` (via {@link generateSetTenantContextSql}).
+ *
+ * Both `USING` (which rows are visible/updatable/deletable) and
+ * `WITH CHECK` (which rows may be inserted or the post-update result of a
+ * row) are set to the same predicate, so the policy can't be used to read
+ * one tenant's rows while writing as another.
+ *
+ * @throws {TypeError} if `options.table`, `options.tenantColumn`,
+ * `options.policyName`, or `options.sessionSetting` is not a valid SQL
+ * identifier (or, for `sessionSetting`, dot-separated identifier).
+ */
+export function generateTenantIsolationPolicySql(options: RlsPolicyOptions): string {
+  const table = options.table;
+  const tenantColumn = options.tenantColumn ?? 'tenant_id';
+  const policyName = options.policyName ?? `${table}_tenant_isolation`;
+  const sessionSetting = options.sessionSetting ?? 'app.current_tenant_id';
+  const command = options.command ?? 'ALL';
+
+  assertValidIdentifier(table, 'table');
+  assertValidIdentifier(tenantColumn, 'tenantColumn');
+  assertValidIdentifier(policyName, 'policyName');
+  assertValidSessionSetting(sessionSetting, 'sessionSetting');
+  if (options.roles) {
+    for (const role of options.roles) {
+      assertValidIdentifier(role, 'roles');
+    }
+  }
+
+  const lines = [`CREATE POLICY ${quoteIdentifier(policyName)} ON ${quoteIdentifier(table)}`];
+
+  if (command !== 'ALL') {
+    lines.push(`  FOR ${command}`);
+  }
+
+  if (options.roles && options.roles.length > 0) {
+    lines.push(`  TO ${options.roles.map(quoteIdentifier).join(', ')}`);
+  }
+
+  const predicate = `${quoteIdentifier(tenantColumn)} = current_setting('${sessionSetting}', true)`;
+  lines.push(`  USING (${predicate})`);
+  lines.push(`  WITH CHECK (${predicate});`);
+
+  return lines.join('\n');
+}
+
+/**
+ * Generates the SQL a request-scoped connection runs (once, typically at
+ * the start of a transaction) to make the current tenant id visible to
+ * every RLS policy created by {@link generateTenantIsolationPolicySql} for
+ * the rest of that transaction/session.
+ *
+ * The tenant id itself is NEVER interpolated into the returned string —
+ * this function only ever emits the placeholder `$1`. Callers must bind the
+ * real tenant id through their driver's own parameterized-query mechanism,
+ * e.g.:
+ *
+ * ```ts
+ * await client.query(generateSetTenantContextSql(), [tenantId]);
+ * ```
+ *
+ * This is deliberate and load-bearing: the tenant id is genuine per-request
+ * user input, so it must go through the same driver-level escaping as any
+ * other bound parameter rather than through string concatenation, no matter
+ * how well-formed it looks. `set_config`'s third argument (`true`) scopes
+ * the setting to the current transaction, so it can't leak onto a pooled
+ * connection reused by a later, differently-tenanted request.
+ *
+ * @throws {TypeError} if `sessionSetting` is not a valid (dot-separated) SQL identifier.
+ */
+export function generateSetTenantContextSql(sessionSetting = 'app.current_tenant_id'): string {
+  assertValidSessionSetting(sessionSetting, 'sessionSetting');
+  return `SELECT set_config('${sessionSetting}', $1, true);`;
+}
+
+/** The result of {@link tenantWhereClause}: a composable SQL fragment plus the next free placeholder index. */
+export interface TenantWhereClauseResult {
+  /** A `"<column>" = $<n>` fragment, ready to `AND` into a hand-written `WHERE` clause. */
+  clause: string;
+  /** The placeholder index the caller should use for its next bound parameter. */
+  nextParamIndex: number;
+}
+
+/**
+ * Builds a composable `"<tenantColumn>" = $<paramIndex>` fragment for
+ * hand-written parameterized queries that need to AND-in a tenant filter
+ * alongside other conditions, at whatever placeholder position those other
+ * conditions have left off at.
+ *
+ * Like {@link generateSetTenantContextSql}, this never embeds the tenant id
+ * *value* — only the column identifier (validated) and a placeholder
+ * number. Callers bind the actual tenant id as the `paramIndex`-th
+ * parameter of their query.
+ *
+ * @throws {TypeError} if `tenantColumn` is not a valid SQL identifier.
+ */
+export function tenantWhereClause(
+  tenantColumn = 'tenant_id',
+  paramIndex = 1,
+): TenantWhereClauseResult {
+  assertValidIdentifier(tenantColumn, 'tenantColumn');
+  return {
+    clause: `${quoteIdentifier(tenantColumn)} = $${paramIndex}`,
+    nextParamIndex: paramIndex + 1,
+  };
+}
+
+/**
+ * Generates a complete, ready-to-save migration that enables and forces RLS
+ * and creates a tenant-isolation policy for every table in `tables`.
+ *
+ * Each entry may be a bare table name (shorthand for
+ * `{ table: name }`, i.e. all-default RLS options) or a full
+ * {@link RlsPolicyOptions} object for tables that need a non-default
+ * column, policy name, session setting, command, or role list. This mirrors
+ * how a real migration usually looks: mostly-default policies for most
+ * tables, with a few overridden.
+ *
+ * @throws {TypeError} if any table's resolved options contain an invalid SQL identifier.
+ */
+export function generateTenantIsolationMigration(tables: Array<string | RlsPolicyOptions>): string {
+  const header =
+    '-- Generated by @novavey/multi-tenant-security-kit: tenant RLS isolation migration.';
+
+  const blocks = tables.map((entry) => {
+    const options: RlsPolicyOptions = typeof entry === 'string' ? { table: entry } : entry;
+    return `${generateEnableRlsSql(options.table)}\n\n${generateTenantIsolationPolicySql(options)}`;
+  });
+
+  return [header, ...blocks].join('\n\n');
+}
