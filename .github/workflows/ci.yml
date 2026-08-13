@@ -66,8 +66,10 @@ jobs:
   # Under this repo's "Standard" governance tier (see docs/github-governance.md)
   # it is intentionally NOT added to the required status checks list, so a
   # known-vulnerable dependency surfaces in the PR checks UI without gating
-  # merges. Moving to a stricter tier would (a) make this job required and/or
-  # (b) add a CodeQL analysis workflow alongside it.
+  # merges. See docs/github-governance.md Step 6 for the (deliberately
+  # manual) upgrade path, including promoting this job to required. Static
+  # analysis (as opposed to dependency-CVE scanning) lives separately in
+  # codeql.yml.
   security-audit:
     name: security-audit
     runs-on: ubuntu-latest
