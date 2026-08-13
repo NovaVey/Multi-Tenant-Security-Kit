@@ -33,6 +33,11 @@ follows [Semantic Versioning](https://semver.org/).
 - Shared error hierarchy (`SecurityKitError` and typed subclasses) used
   consistently across every module.
 - Full test suite (250+ tests) and dual ESM/CJS build with type declarations.
+- Minimum supported Node.js version is **20.19** (`engines.node`, CI matrix,
+  `.nvmrc`). `vitest@4`/`vite`/`rolldown` — pulled in to fix real CVEs in an
+  older `vitest`/`esbuild` — hard-require Node 20.19+/22.13+/24+ and cannot
+  start on Node 18 at all; Node 18 has also been end-of-life since April 2025. An earlier draft of this package targeted Node >=18.18; that was
+  narrowed before the first release once CI caught the incompatibility.
 - GitHub governance: CI (lint, typecheck, multi-version test matrix, build,
   advisory `npm audit`), tag-triggered release automation with npm
   provenance, CODEOWNERS, Dependabot (npm + GitHub Actions), issue/PR
