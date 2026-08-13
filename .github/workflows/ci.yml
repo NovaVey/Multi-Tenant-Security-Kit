@@ -62,6 +62,27 @@ jobs:
       - run: npm ci
       - run: npm run build
 
+  # Not in the required status checks list yet — this is new (proves the RLS
+  # module's SQL actually enforces isolation against a real Postgres, not
+  # just that it produces the expected SQL text) and container-based tests
+  # carry more infra-flakiness risk than the pure unit suite. ubuntu-latest
+  # runners have Docker preinstalled, so no extra setup is needed. Promoting
+  # this to required is a manual, deliberate choice — see
+  # docs/github-governance.md Step 6.
+  test-integration:
+    name: test-integration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci
+      - run: npm run test:integration
+
   # Advisory only: continue-on-error means this job never blocks a merge.
   # Under this repo's "Standard" governance tier (see docs/github-governance.md)
   # it is intentionally NOT added to the required status checks list, so a
