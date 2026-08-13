@@ -7,7 +7,9 @@ import { RbacPolicy } from '../../src/rbac/policy.js';
 import type { AccessSubject } from '../../src/rbac/types.js';
 import { runWithTenant } from '../../src/tenant/context.js';
 
-function mockReq(overrides: Partial<MinimalRequest> = {}): MinimalRequest {
+function mockReq(
+  overrides: Partial<MinimalRequest> & Record<string, unknown> = {},
+): MinimalRequest {
   return { headers: {}, ...overrides };
 }
 

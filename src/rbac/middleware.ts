@@ -121,7 +121,11 @@ export function subjectFromRequestRoles<Req extends MinimalRequest = MinimalRequ
   rolesProperty = 'roles',
 ): SubjectResolver<Req> {
   return (req) => {
-    const raw = req[rolesProperty];
+    // `MinimalRequest` deliberately has no index signature (see
+    // src/http/types.ts), so reading a caller-configurable property name
+    // needs an explicit, narrowly-scoped cast here rather than widening
+    // the public type.
+    const raw = (req as Record<string, unknown>)[rolesProperty];
     const roles = Array.isArray(raw)
       ? raw.filter((entry): entry is string => typeof entry === 'string')
       : [];
