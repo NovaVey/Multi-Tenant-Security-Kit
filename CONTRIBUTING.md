@@ -64,10 +64,17 @@ Common prefixes: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`.
 
 - Branch off `main`.
 - Open a pull request against `main`.
-- CI must be green, and at least one approving review is required before
-  merging (see branch protection rules).
+- CI must be green before merging (see branch protection rules); required
+  approvals is currently 0 for this solo-maintained repo, but the PR + green
+  CI requirement itself is never skipped, including for the maintainer.
 - Prefer small, focused PRs over large multi-purpose ones — they're easier
   to review and safer to release.
+- Dependabot PRs are a partial exception: low-risk updates (npm
+  devDependency minor/patch, `github-actions` minor/patch) merge themselves
+  automatically once CI passes — see
+  [`docs/github-governance.md`](./docs/github-governance.md). Anything
+  riskier (major bumps, production dependencies) still shows up as a normal
+  PR waiting for review.
 
 ## How a release happens
 

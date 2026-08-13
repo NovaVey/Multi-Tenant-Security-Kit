@@ -8,6 +8,18 @@ follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Dependabot auto-merge (`.github/workflows/dependabot-auto-merge.yml`) for
+  the low-risk subset of dependency bumps only: npm devDependency
+  minor/patch updates and `github-actions` minor/patch updates. Any
+  semver-major bump, and any npm production-dependency bump, is never
+  auto-merged — those stay normal PRs for manual review. Requires "Allow
+  auto-merge" enabled under Settings -> General (see
+  `docs/github-governance.md`, Step 4).
+
+## [0.1.0] - 2026-08-13
+
+### Added
+
 - **`tenant`** — `AsyncLocalStorage`-based tenant context (`runWithTenant`,
   `getCurrentTenant(Id)`, `requireCurrentTenant(Id)`), cross-tenant isolation
   guards (`assertSameTenant`, `assertTenantMatches`, `scopeToTenant`), and
@@ -45,4 +57,5 @@ follows [Semantic Versioning](https://semver.org/).
   manual branch-protection setup checklist
   (`docs/github-governance.md`).
 
-[Unreleased]: https://github.com/NovaVey/multi-tenant-security-kit/commits/main
+[Unreleased]: https://github.com/NovaVey/multi-tenant-security-kit/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/NovaVey/multi-tenant-security-kit/releases/tag/v0.1.0
