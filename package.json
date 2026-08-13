@@ -1,6 +1,6 @@
 {
   "name": "@novavey/multi-tenant-security-kit",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A framework-agnostic toolkit for building secure multi-tenant applications: tenant isolation, RBAC, per-tenant rate limiting, audit logging, Postgres row-level security helpers, and per-tenant encryption.",
   "keywords": [
     "multi-tenant",
@@ -86,7 +86,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
-    "verify": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build",
+    "verify:dist": "node scripts/verify-dist-singleton.mjs",
+    "verify": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build && npm run verify:dist",
     "prepublishOnly": "npm run verify"
   },
   "devDependencies": {

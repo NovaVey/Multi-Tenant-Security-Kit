@@ -17,7 +17,7 @@ export default tseslint.config(
     languageOptions: {
       parserOptions: {
         projectService: {
-          allowDefaultProject: ['*.config.js', '*.config.ts'],
+          allowDefaultProject: ['*.config.js', '*.config.ts', 'scripts/*.mjs'],
         },
         tsconfigRootDir: import.meta.dirname,
       },
@@ -30,6 +30,14 @@ export default tseslint.config(
       '@typescript-eslint/consistent-type-imports': 'error',
       '@typescript-eslint/no-explicit-any': 'warn',
       '@typescript-eslint/explicit-module-boundary-types': 'off',
+    },
+  },
+  {
+    // Plain Node scripts (not .ts) don't get typescript-eslint's automatic
+    // no-undef handling for TS files, so Node's globals need declaring here.
+    files: ['scripts/**/*.mjs'],
+    languageOptions: {
+      globals: { console: 'readonly', process: 'readonly', URL: 'readonly' },
     },
   },
   {
