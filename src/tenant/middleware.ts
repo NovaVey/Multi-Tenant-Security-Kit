@@ -12,8 +12,15 @@ export type TenantResolver<Req extends MinimalRequest = MinimalRequest> = (
   req: Req,
 ) => TenantContext | undefined | Promise<TenantContext | undefined>;
 
-/** Default tenant id shape: 1-64 chars of letters, digits, `-`, `_`. Override via `validateTenantId`. */
-const DEFAULT_TENANT_ID_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/;
+/**
+ * Default tenant id shape: 1-64 chars of letters, digits, `-`, `_`. Override via `validateTenantId`.
+ *
+ * Exported only so `test/tenant/*.fuzz.test.ts` has a real oracle to fuzz
+ * against instead of duplicating this pattern (and risking drift) in a test
+ * file. Not re-exported from `tenant/index.ts`, so it stays out of the
+ * package's public API.
+ */
+export const DEFAULT_TENANT_ID_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/;
 
 export interface TenantMiddlewareOptions<Req extends MinimalRequest = MinimalRequest> {
   /** Determines the tenant for each request. See the `*TenantResolver` helpers below for common strategies. */
