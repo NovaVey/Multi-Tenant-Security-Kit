@@ -6,6 +6,76 @@ follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-08-13
+
+### Fixed
+
+- **`MinimalRequest`/`MinimalResponse` silently broke Express type-compatibility.**
+  Both had a `[key: string]: unknown` index signature (meant to document
+  that frameworks attach arbitrary properties like `req.user`), but
+  TypeScript only lets a _declared_ type (like `express.Request`) satisfy a
+  target type that has an index signature if the declared type also has a
+  matching one — and Express's own types don't. The result: every
+  documented Express usage (`app.use(createTenantMiddleware(...))`,
+  `app.use(createRateLimitMiddleware(...))`, `app.use(requirePermission(...))`)
+  failed `tsc --noEmit` under strict TypeScript, including this README's own
+  Quickstart and `examples/express-basic.ts` — never caught by CI, since
+  `examples/` is excluded from typecheck by design. Found via a full
+  doc-sweep that type-checks every documented code sample against the real
+  published package rather than trusting source-level tests or review, the
+  same lesson that produced 0.1.1's fix. Fixed by dropping the index
+  signature; the one place that needed dynamic property access internally
+  (`subjectFromRequestRoles`) now casts through `Record<string, unknown>`
+  locally instead of widening the public type.
+- `AuditSinkError` (`/audit`), `TenantContextError`/`CrossTenantAccessError`/
+  `InvalidTenantIdError` (`/tenant`), `ForbiddenError`/`RbacConfigurationError`
+  (`/rbac`), `RateLimitExceededError` (`/rate-limit`), and `DecryptionError`
+  (`/crypto`) are now re-exported from the subpath whose own public API
+  throws them, not just the package root — e.g. `onSinkError: (error:
+AuditSinkError) => ...`, as shown in docs/audit-logging.md, previously
+  failed to type-check when only `/audit` was imported.
+- `docs/rate-limiting.md`'s Redis store example had an empty method body
+  with a non-`void` return type, which doesn't compile as literally
+  written; replaced with a throwing stub pointing at the new full reference
+  implementation (see Added, below). Its `points`/`getTenantId` callback
+  examples now show the explicit `<express.Request>` type argument needed
+  to access framework-specific properties (`req.path`, `req.params`) —
+  these middleware factories are generic over the request type and default
+  to the framework-agnostic `MinimalRequest`, which doesn't have them.
+- `docs/rbac.md`'s custom `SubjectResolver` example imported
+  `requireCurrentTenantId` from `/rbac`; it's exported from `/tenant`.
+- `docs/tenant-isolation.md` and `docs/rate-limiting.md`: two route-param
+  lookups now coerce with `String(...)` — Express 5 types `req.params[key]`
+  as `string | string[]` (to support repeated-segment patterns), which
+  doesn't assign to a plain `string` parameter as literally written.
+
+### Added
+
+- CodeQL static analysis (`.github/workflows/codeql.yml`) — runs on every
+  push/PR to `main` plus a weekly schedule, reporting to the repo's Security
+  -> Code scanning alerts tab. Kept advisory (not a required status check),
+  matching this repo's Standard governance tier; see
+  `docs/github-governance.md` Step 6 for the (deliberately manual) option to
+  promote it.
+- `examples/fastify-basic.ts` and `examples/koa-basic.ts` — tenant +
+  rate-limit middleware wired into Fastify and Koa, each with a small,
+  verified request/response adapter (neither framework's native
+  request/response type matches `MinimalRequest`/`MinimalResponse` closely
+  enough to skip one, unlike Express).
+- `examples/nextjs-route-handler.ts` — the same tenant/rate-limit/RBAC
+  behavior inside a Next.js Route Handler, calling `runWithTenant()`,
+  `TenantRateLimiter.consume()`, and `RbacPolicy.assert()` directly instead
+  of through `Middleware`, since Route Handlers use the Web Fetch API's
+  `Request`/`Response` rather than an Express-shaped `(req, res, next)`.
+  Notes the Node.js-runtime requirement (`AsyncLocalStorage` needs it, Route
+  Handlers use it by default, root `middleware.ts` does not).
+- `examples/redis-rate-limit-store.ts` — a full, verified reference
+  `RateLimitStore` implementation backed by Redis: an atomic Lua-scripted
+  token bucket (via `ioredis`'s `defineCommand`) mirroring
+  `MemoryRateLimitStore`'s refill math exactly, for multi-instance
+  deployments. Linked from `docs/rate-limiting.md`'s "Scaling past one
+  process" section.
+
 ## [0.1.1] - 2026-08-13
 
 ### Fixed
@@ -83,6 +153,7 @@ follows [Semantic Versioning](https://semver.org/).
   manual branch-protection setup checklist
   (`docs/github-governance.md`).
 
-[Unreleased]: https://github.com/NovaVey/multi-tenant-security-kit/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/NovaVey/multi-tenant-security-kit/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/NovaVey/multi-tenant-security-kit/releases/tag/v0.1.2
 [0.1.1]: https://github.com/NovaVey/multi-tenant-security-kit/releases/tag/v0.1.1
 [0.1.0]: https://github.com/NovaVey/multi-tenant-security-kit/releases/tag/v0.1.0
