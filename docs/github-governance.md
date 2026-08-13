@@ -9,7 +9,7 @@ to `main`.
 
 This repo is set up at the **Standard** governance tier: required CI checks
 and one review before merge, with the security audit job kept advisory
-rather than blocking. Step 5 describes the upgrade path to a stricter tier.
+rather than blocking. Step 6 describes the upgrade path to a stricter tier.
 
 ## Step 1 — General settings
 
@@ -28,9 +28,15 @@ also acceptable — use whichever is available on your plan).
 Create a rule targeting `main` with:
 
 - **Require a pull request before merging**
-  - Require approvals: **1**. (A solo maintainer can later drop this to 0,
-    but should keep "require a pull request before merging" itself enabled
-    so that required status checks still gate every merge.)
+  - Require approvals: **1** is the documented default; this repo currently
+    runs with it dropped to **0** (solo maintainer) — "require a pull
+    request before merging" stays enabled either way, so required status
+    checks still gate every merge regardless of the approval count.
+  - **Allowed merge methods**: this repo is configured **squash-only**
+    (uncheck "Merge commit" and "Rebase", leave only "Squash" checked) —
+    keeps `main`'s history one commit per PR, which matters for an
+    easily-auditable security library and for `dependabot-auto-merge.yml`
+    (Step 4) always squashing.
 - **Require status checks to pass before merging**
   - **Require branches to be up to date before merging**
   - Once each check has run at least once on a PR (open any PR to trigger
@@ -50,7 +56,7 @@ Create a rule targeting `main` with:
     `test (18.18.0)`** if it's still checked.
   - Do **not** add `security-audit` to this list — it's intentionally
     advisory (`continue-on-error: true` in the workflow) under the Standard
-    tier this repo uses. See Step 5 for the upgrade path.
+    tier this repo uses. See Step 6 for the upgrade path.
 - **Require conversation resolution before merging**
 - Disallow force pushes to `main`.
 - Disallow branch deletion.
@@ -71,7 +77,36 @@ the first tagged release.
 Reminder: the npm org/scope `@novavey` must already exist on npmjs.com, and
 the npm account generating the token must have publish rights to it.
 
-## Step 4 — Code security and analysis
+## Step 4 — Enable Dependabot auto-merge
+
+**Settings -> General -> Pull Requests -> check "Allow auto-merge"**
+
+`.github/workflows/dependabot-auto-merge.yml` calls `gh pr merge --auto`,
+which fails outright unless this repository setting is on. It's off by
+default and isn't part of any Ruleset — a separate toggle you have to find
+under General settings specifically.
+
+**What it actually auto-merges — deliberately narrow:**
+
+- npm **devDependency** bumps that are **minor or patch** (the same
+  `dev-dependencies-minor-patch` group already batched in
+  `.github/dependabot.yml`).
+- `github-actions` ecosystem bumps that are **minor or patch**.
+
+**What it never touches:** any `semver-major` bump, and any npm
+**production**-dependency bump (this package currently ships zero runtime
+`dependencies`, but the workflow doesn't assume that stays true). Those PRs
+are left exactly as a normal Dependabot PR — sitting there for you to
+review and merge by hand.
+
+Auto-merged PRs still go through the exact same branch protection as
+everything else — required status checks must pass, squash-only — this
+workflow only flips "merge automatically once green," it never bypasses a
+required check. It also auto-approves the low-risk subset it merges, purely
+so the workflow keeps working unmodified if you ever raise required
+approvals above 0; it has no effect while approvals are 0.
+
+## Step 5 — Code security and analysis
 
 **Settings -> Code security and analysis**
 
@@ -82,7 +117,7 @@ the npm account generating the token must have publish rights to it.
 - Enable **Secret scanning** and **Push protection**, if available on your
   plan.
 
-## Step 5 — Upgrade path (optional, not done today)
+## Step 6 — Upgrade path (optional, not done today)
 
 If this project's risk profile grows (more contributors, wider adoption,
 handling sensitive data), consider moving to a stricter governance tier:
