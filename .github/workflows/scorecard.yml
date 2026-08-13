@@ -1,0 +1,58 @@
+name: Scorecard supply-chain security
+
+# OpenSSF Scorecard: an automated, third-party-verifiable check of this
+# repo's supply-chain security hygiene (branch protection, pinned
+# dependencies, CI practices, vulnerability response, etc.) — distinct from
+# codeql.yml (source-level static analysis) and ci.yml's security-audit job
+# (known-CVE dependency scanning). Results publish to
+# https://scorecard.dev and back the README badge, and also upload as a
+# SARIF file to this repo's Security -> Code scanning alerts tab.
+#
+# Uses the default GITHUB_TOKEN, which is sufficient for most checks on a
+# public repo. A couple of checks (e.g. Branch-Protection, when this
+# workflow itself isn't the one reading the ruleset) are more accurate with
+# a dedicated read-only PAT — see
+# https://github.com/ossf/scorecard-action#authentication — treated here as
+# an optional future enhancement, not required for this workflow to run.
+
+on:
+  branch_protection_rule:
+  schedule:
+    # Weekly, independent of any push — this repo's score can change even
+    # when nothing in the tree does (e.g. an advisory affecting a dependency).
+    - cron: '30 4 * * 6'
+  push:
+    branches: [main]
+
+permissions: read-all
+
+jobs:
+  analysis:
+    name: Scorecard analysis
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      id-token: write
+      contents: read
+      actions: read
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: ossf/scorecard-action@v2
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: true
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: SARIF file
+          path: results.sarif
+          retention-days: 5
+
+      - uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: results.sarif

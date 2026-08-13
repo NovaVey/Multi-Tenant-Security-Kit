@@ -41,8 +41,15 @@
 
 import type { RlsPolicyOptions } from './types.js';
 
-/** Strict allowlist for a single unquoted SQL identifier segment. */
-const IDENTIFIER_PATTERN = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+/**
+ * Strict allowlist for a single unquoted SQL identifier segment.
+ *
+ * Exported only so `test/rls/*.fuzz.test.ts` has a real oracle to fuzz
+ * against instead of duplicating this pattern (and risking drift) in a test
+ * file. Not re-exported from `rls/index.ts`, so it stays out of the
+ * package's public API.
+ */
+export const IDENTIFIER_PATTERN = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 
 /**
  * Validates that `value` is safe to use as a SQL identifier, throwing a
