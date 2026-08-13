@@ -86,10 +86,16 @@ new AuditLogger({
 ```ts
 new AuditLogger({
   sinks: [new ConsoleAuditSink()],
-  redact: (event) => ({
-    ...event,
-    metadata: event.metadata ? { ...event.metadata, password: undefined } : event.metadata,
-  }),
+  redact: (event) => {
+    // Not a ternary building `{ ...event, metadata: event.metadata ? ... :
+    // event.metadata }`: under `exactOptionalPropertyTypes` (this package's
+    // own tsconfig uses it, and yours might too), explicitly assigning
+    // `metadata: undefined` doesn't satisfy `metadata?: Record<string,
+    // unknown>` — only *omitting* the key does. Returning `event` unchanged
+    // when there's nothing to redact sidesteps that entirely.
+    if (!event.metadata) return event;
+    return { ...event, metadata: { ...event.metadata, password: undefined } };
+  },
 });
 ```
 
@@ -106,7 +112,13 @@ whose `log()` merges the given defaults _underneath_ each call's own fields
 
 ```ts
 app.use((req, res, next) => {
-  req.auditLog = auditLog.child({ actorId: req.user?.id });
+  // Not `auditLog.child({ actorId: req.user?.id })`: req.user is realistically
+  // optional (unauthenticated routes, or this middleware running before auth
+  // does), and under `exactOptionalPropertyTypes` (this package's own tsconfig
+  // uses it, and yours might too) explicitly passing `actorId: undefined`
+  // doesn't satisfy `actorId?: string` — only omitting the key does. Skipping
+  // child() entirely when there's nothing to default sidesteps that.
+  req.auditLog = req.user ? auditLog.child({ actorId: req.user.id }) : auditLog;
   next();
 });
 

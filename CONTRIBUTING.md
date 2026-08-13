@@ -38,6 +38,18 @@ Tests mirror this layout under `test/`, one directory per module. New code
 should follow the same pattern: add or extend a module's directory and its
 `index.ts` barrel, and add matching tests under `test/<module>/`.
 
+`test/integration/` holds tests that need Docker (currently: RLS against a
+real Postgres) — kept separate from the fast unit suite, run via
+`npm run test:integration`, not part of `npm run verify`/`npm test`.
+
+**Every code sample in `README.md` and `docs/*.md` is mirrored in
+`doc-examples/`** and checked by CI (`npm run verify:docs`) — see
+[`doc-examples/README.md`](./doc-examples/README.md). **If you edit a code
+sample in a doc, update the matching file in `doc-examples/` in the same
+commit** (and vice versa). This exists because two real bugs shipped in
+past releases from doc samples that looked correct but didn't actually
+compile or run — see `CHANGELOG.md`'s `0.1.1` and `0.1.2` entries.
+
 ## Before you push
 
 Run the full verification gate — the same command CI runs:
@@ -46,8 +58,13 @@ Run the full verification gate — the same command CI runs:
 npm run verify
 ```
 
-This runs, in order: `format:check`, `lint`, `typecheck`, `test`, and
-`build`. A PR won't pass CI unless this passes locally first.
+This runs, in order: `format:check`, `lint`, `typecheck`, `test`, `build`,
+`verify:dist` (checks the built package's public entry points still share
+one `AsyncLocalStorage` instance — see `scripts/verify-dist-singleton.mjs`),
+and `verify:docs` (type-checks and runs every file in `doc-examples/`
+against that same build). A PR won't pass CI unless this passes locally
+first. `test:integration` is separate (needs Docker) — run it yourself if
+your change touches `src/rls/`.
 
 ## Commit messages
 
