@@ -117,18 +117,31 @@ approvals above 0; it has no effect while approvals are 0.
 - Enable **Secret scanning** and **Push protection**, if available on your
   plan.
 
-## Step 6 — Upgrade path (optional, not done today)
+## Step 6 — Upgrade path
 
 If this project's risk profile grows (more contributors, wider adoption,
-handling sensitive data), consider moving to a stricter governance tier:
+handling sensitive data), consider moving further toward a stricter
+governance tier:
 
-- Require **2** approving reviews instead of 1.
-- Add a CodeQL analysis workflow.
-- Require signed commits.
-- Promote `security-audit` from advisory to a required status check.
+- ~~Add a CodeQL analysis workflow.~~ **Done** — `.github/workflows/codeql.yml`
+  runs on every push/PR to `main` plus a weekly schedule, and reports to the
+  repo's Security -> Code scanning alerts tab. It's deliberately **not** in
+  the required-status-checks list below (same advisory posture as
+  `security-audit`) — add `Analyze (javascript-typescript)` there yourself if
+  you want it to block merges.
+- Require **2** approving reviews instead of 1. **Not done** — left for a
+  solo maintainer to opt into if/when there's a second regular reviewer;
+  forcing it now would just mean self-approving or bypassing the rule.
+- Require signed commits. **Not done** — a real workflow-friction cost (every
+  contributor needs a configured signing key) for a benefit that mostly
+  matters once commits come from more than one trusted person.
+- Promote `security-audit` from advisory to a required status check. **Not
+  done** — `npm audit` can fail on a transitive dev-only advisory with no
+  available fix, which would block every merge until upstream ships one;
+  advisory keeps it visible without that failure mode.
 
-This is listed here as a deliberate future option — none of it is configured
-as part of this initial setup.
+The three "not done" items above are intentionally left as a manual choice
+for whoever is running this repo, not something to silently flip on.
 
 ---
 

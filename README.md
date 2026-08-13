@@ -106,7 +106,12 @@ app.get(
 
 See [`examples/express-basic.ts`](./examples/express-basic.ts) for a fuller,
 runnable example wiring all six modules together, including audit logging on
-every denial.
+every denial. Other frameworks:
+[`examples/fastify-basic.ts`](./examples/fastify-basic.ts),
+[`examples/koa-basic.ts`](./examples/koa-basic.ts),
+[`examples/nextjs-route-handler.ts`](./examples/nextjs-route-handler.ts), and
+a full Redis-backed `RateLimitStore` for multi-instance deployments in
+[`examples/redis-rate-limit-store.ts`](./examples/redis-rate-limit-store.ts).
 
 ## Design principles
 

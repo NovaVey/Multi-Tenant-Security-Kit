@@ -9,7 +9,9 @@ import {
 } from '../../src/tenant/middleware.js';
 import type { MinimalRequest, MinimalResponse } from '../../src/http/types.js';
 
-function mockReq(overrides: Partial<MinimalRequest> = {}): MinimalRequest {
+function mockReq(
+  overrides: Partial<MinimalRequest> & Record<string, unknown> = {},
+): MinimalRequest {
   return { headers: {}, ...overrides };
 }
 

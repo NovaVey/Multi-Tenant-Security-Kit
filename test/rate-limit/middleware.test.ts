@@ -10,7 +10,9 @@ import {
 import type { RateLimitResult, RateLimitStore } from '../../src/rate-limit/types.js';
 import { runWithTenant } from '../../src/tenant/context.js';
 
-function mockReq(overrides: Partial<MinimalRequest> = {}): MinimalRequest {
+function mockReq(
+  overrides: Partial<MinimalRequest> & Record<string, unknown> = {},
+): MinimalRequest {
   return { headers: {}, ...overrides };
 }
 
@@ -209,7 +211,9 @@ describe('createRateLimitMiddleware', () => {
     );
     const store: RateLimitStore = { consume };
     const limiter = new TenantRateLimiter({ store, limit: 2, windowMs: 1000, keyPrefix: 'tenant' });
-    const getTenantId = vi.fn((req: MinimalRequest) => String(req['tenantOverride']));
+    const getTenantId = vi.fn((req: MinimalRequest) =>
+      String((req as unknown as Record<string, unknown>)['tenantOverride']),
+    );
     const middleware = createRateLimitMiddleware({ limiter, getTenantId });
 
     const req = mockReq({ tenantOverride: 'globex' });
@@ -295,7 +299,9 @@ describe('createRateLimitMiddleware', () => {
     );
     const store: RateLimitStore = { consume };
     const limiter = new TenantRateLimiter({ store, limit: 5, windowMs: 1000 });
-    const points = vi.fn((req: MinimalRequest) => (req['bulk'] ? 5 : 1));
+    const points = vi.fn((req: MinimalRequest) =>
+      (req as unknown as Record<string, unknown>)['bulk'] ? 5 : 1,
+    );
     const middleware = createRateLimitMiddleware({ limiter, getTenantId: () => 'acme', points });
 
     middleware(mockReq({ bulk: true }), mockRes(), vi.fn());

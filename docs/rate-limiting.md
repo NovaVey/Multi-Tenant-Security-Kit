@@ -38,10 +38,16 @@ header and `{ error: 'rate_limit_exceeded', retryAfterMs }`.
 
 ## Variable request cost
 
-Not every request should cost the same:
+Not every request should cost the same. `createRateLimitMiddleware` is
+generic over the request type (defaulting to the framework-agnostic
+`MinimalRequest`, which only has `headers`/`hostname`/`method`/`url`) — pass
+your framework's request type as the type argument to get its properties
+(`req.path`, `req.params`, etc.) in these callbacks:
 
 ```ts
-createRateLimitMiddleware({
+import type { Request } from 'express';
+
+createRateLimitMiddleware<Request>({
   limiter,
   points: (req) => (req.path === '/export' ? 20 : 1),
 });
@@ -50,9 +56,11 @@ createRateLimitMiddleware({
 ## Custom tenant resolution
 
 ```ts
-createRateLimitMiddleware({
+createRateLimitMiddleware<Request>({
   limiter,
-  getTenantId: (req) => req.params.tenantId, // instead of the active tenant context
+  // `String(...)`: Express 5 types route params as `string | string[]` (to
+  // support repeated-segment patterns).
+  getTenantId: (req) => String(req.params.tenantId), // instead of the active tenant context
 });
 ```
 
@@ -119,7 +127,13 @@ class RedisRateLimitStore implements RateLimitStore {
     limit: number,
     windowMs: number,
   ): Promise<RateLimitResult> {
-    // e.g. a Lua script implementing the same token-bucket semantics atomically
+    // Needs to be atomic (a Lua script, e.g. via ioredis's `defineCommand`,
+    // is the standard way) so concurrent requests across instances don't
+    // race on a read-modify-write. See the full, runnable reference
+    // implementation at examples/redis-rate-limit-store.ts — it mirrors
+    // MemoryRateLimitStore's token-bucket math exactly, just computed
+    // atomically inside Redis.
+    throw new Error('not implemented — see examples/redis-rate-limit-store.ts');
   }
 }
 

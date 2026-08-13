@@ -123,7 +123,10 @@ about `db.invoices.findById(id)` stops tenant A from requesting tenant B's
 row id if B's id is guessable or enumerable.
 
 ```ts
-const invoice = await db.invoices.findById(req.params.id);
+// `String(...)`: Express 5 types route params as `string | string[]` (to
+// support repeated-segment patterns), so coerce before a lookup expecting
+// a single id.
+const invoice = await db.invoices.findById(String(req.params.id));
 assertTenantMatches(invoice); // throws CrossTenantAccessError if invoice.tenantId !== the active tenant
 ```
 

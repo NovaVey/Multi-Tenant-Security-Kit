@@ -105,10 +105,20 @@ request's tenant middleware already established, even if something else on
 `createTenantMiddleware` before this one.
 
 Write your own `SubjectResolver` when roles come from somewhere else (a
-database lookup, a decoded token) — it can be async:
+database lookup, a decoded token) — it can be async. Note that
+`requireCurrentTenantId()` comes from the [`/tenant`](./tenant-isolation.md)
+subpath, not `/rbac` — and, like the `points`/`getTenantId` callbacks in
+[rate limiting](./rate-limiting.md#variable-request-cost),
+`SubjectResolver` is generic over the request type, so give it your
+framework's request type (extended with whatever an earlier auth middleware
+attaches, e.g. `req.user`) to get that property back:
 
 ```ts
-const getSubject: SubjectResolver = async (req) => {
+import type { Request } from 'express';
+import { requireCurrentTenantId } from '@novavey/multi-tenant-security-kit/tenant';
+import type { SubjectResolver } from '@novavey/multi-tenant-security-kit/rbac';
+
+const getSubject: SubjectResolver<Request & { user: { id: string } }> = async (req) => {
   const roles = await db.userRoles.find(req.user.id);
   return { tenantId: requireCurrentTenantId(), roles };
 };

@@ -13,3 +13,8 @@ export { ConsoleAuditSink, InMemoryAuditSink, callbackAuditSink } from './sinks.
 
 export { AuditLogger } from './logger.js';
 export type { AuditEventInput, AuditLoggerOptions } from './logger.js';
+
+// Re-exported so consumers importing only this subpath can catch/narrow on
+// the error type `AuditLoggerOptions.onSinkError` receives, without also
+// importing from the package root.
+export { AuditSinkError } from '../errors.js';

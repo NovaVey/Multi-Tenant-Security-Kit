@@ -4,3 +4,7 @@ export { TenantRateLimiter } from './limiter.js';
 export type { TenantRateLimiterOptions } from './limiter.js';
 export { createRateLimitMiddleware, assertNotRateLimited } from './middleware.js';
 export type { RateLimitMiddlewareOptions } from './middleware.js';
+// Re-exported so consumers importing only this subpath can catch/narrow on
+// the error type this module's own functions throw, without also importing
+// from the package root.
+export { RateLimitExceededError } from '../errors.js';
