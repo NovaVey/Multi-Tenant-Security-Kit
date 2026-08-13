@@ -35,9 +35,24 @@ export default tseslint.config(
   {
     // Plain Node scripts (not .ts) don't get typescript-eslint's automatic
     // no-undef handling for TS files, so Node's globals need declaring here.
+    //
+    // The no-unsafe-* rules are also off here: verify-dist-singleton.mjs
+    // dynamically imports from dist/, which doesn't exist yet at lint time
+    // in a fresh checkout — CI's lint-and-typecheck job never runs build
+    // first (it's a separate parallel job), so those imports always type
+    // as `any` there. Locally this can go unnoticed if dist/ happens to
+    // already exist from a prior manual build, which is exactly how this
+    // got missed once already — don't trust a local lint pass here without
+    // deleting dist/ first.
     files: ['scripts/**/*.mjs'],
     languageOptions: {
       globals: { console: 'readonly', process: 'readonly', URL: 'readonly' },
+    },
+    rules: {
+      '@typescript-eslint/no-unsafe-assignment': 'off',
+      '@typescript-eslint/no-unsafe-member-access': 'off',
+      '@typescript-eslint/no-unsafe-call': 'off',
+      '@typescript-eslint/no-unsafe-argument': 'off',
     },
   },
   {
