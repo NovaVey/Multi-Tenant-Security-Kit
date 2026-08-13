@@ -6,6 +6,32 @@ follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-08-13
+
+### Fixed
+
+- **Critical: the active-tenant context was not actually shared across the
+  package's public entry points.** Every entry point (`.`, `./tenant`,
+  `./rbac`, `./rate-limit`, `./audit`, `./rls`, `./crypto`) was built as an
+  independently-bundled file, each inlining its own separate copy of the
+  `AsyncLocalStorage` singleton in `tenant/context.ts`. Any usage mixing
+  more than one entry point — including this README's own Quickstart
+  example — silently talked to different storages: tenant context set via
+  `createTenantMiddleware` (`./tenant`) was invisible to
+  `subjectFromRequestRoles` (`./rbac`) and the default tenant resolution in
+  `createRateLimitMiddleware` (`./rate-limit`), both of which threw
+  `TenantContextError` on every call. Fixed by switching the build
+  (`tsup.config.ts`) from bundling each entry independently to
+  `bundle: false` with every source file as its own entry, so Node's own
+  module cache (the ESM registry / the CJS `require` cache, both keyed by
+  resolved file path) guarantees `tenant/context.ts` loads exactly once per
+  process regardless of which entry point is imported. A permanent
+  regression test (`scripts/verify-dist-singleton.mjs`, run via
+  `npm run verify:dist`) now runs against the built `dist/` output as part
+  of `npm run verify` — and therefore CI's `build` job and the release
+  workflow — since this class of bug only exists in bundled output and is
+  invisible to source-level tests.
+
 ### Added
 
 - Dependabot auto-merge (`.github/workflows/dependabot-auto-merge.yml`) for
@@ -57,5 +83,6 @@ follows [Semantic Versioning](https://semver.org/).
   manual branch-protection setup checklist
   (`docs/github-governance.md`).
 
-[Unreleased]: https://github.com/NovaVey/multi-tenant-security-kit/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/NovaVey/multi-tenant-security-kit/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/NovaVey/multi-tenant-security-kit/releases/tag/v0.1.1
 [0.1.0]: https://github.com/NovaVey/multi-tenant-security-kit/releases/tag/v0.1.0
