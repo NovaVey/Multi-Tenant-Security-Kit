@@ -2,10 +2,13 @@
 // InMemoryAuditSink for assertions). Keep in sync — see
 // doc-examples/README.md for the convention this file is part of.
 import assert from 'node:assert/strict';
+import { trace } from '@opentelemetry/api';
 import {
   AuditLogger,
   InMemoryAuditSink,
   AuditAction,
+  openTelemetrySink,
+  traceContextTransform,
 } from '@novavey/multi-tenant-security-kit/audit';
 
 // "Basic usage"
@@ -55,4 +58,49 @@ assert.equal(childSink.events[0].actorId, 'user_2');
 childLog.log({ action: 'invoices.exported', outcome: 'success', actorId: 'user_3' });
 assert.equal(childSink.events[1].actorId, 'user_3');
 
-console.log('OK audit-logging.md: basic usage + redact + child logger examples');
+// "OpenTelemetry integration": no SDK is registered in this script, so
+// trace.getActiveSpan() genuinely returns undefined — real proof of the
+// documented no-op behavior, not a mock standing in for one.
+const otelNoopSink = openTelemetrySink({ getActiveSpan: () => trace.getActiveSpan() });
+assert.doesNotThrow(() => {
+  otelNoopSink.write({
+    action: 'auth.login.succeeded',
+    outcome: 'success',
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// A minimal hand-rolled span (not `@opentelemetry/api`'s own) proves the
+// structural OtelSpanLike contract for real, at runtime, not just at the
+// type level: anything shaped like a Span works, no SDK required.
+const spanCalls = { addEvent: [], setStatus: [] };
+const fakeSpan = {
+  addEvent: (name, attributes) => spanCalls.addEvent.push({ name, attributes }),
+  setStatus: (status) => spanCalls.setStatus.push(status),
+  spanContext: () => ({ traceId: 't-1', spanId: 's-1' }),
+};
+
+const otelSink = openTelemetrySink({ getActiveSpan: () => fakeSpan });
+otelSink.write({
+  action: AuditAction.RbacPermissionDenied,
+  outcome: 'denied',
+  timestamp: new Date().toISOString(),
+  metadata: { permission: 'invoices:write' },
+});
+assert.equal(spanCalls.addEvent.length, 1);
+assert.equal(spanCalls.addEvent[0].name, AuditAction.RbacPermissionDenied);
+assert.equal(spanCalls.addEvent[0].attributes.outcome, 'denied');
+assert.deepEqual(spanCalls.setStatus[0], { code: 2, message: AuditAction.RbacPermissionDenied });
+
+const transform = traceContextTransform({ getActiveSpan: () => fakeSpan });
+const transformed = transform({
+  action: 'auth.login.succeeded',
+  outcome: 'success',
+  timestamp: new Date().toISOString(),
+  metadata: { foo: 'bar' },
+});
+assert.deepEqual(transformed.metadata, { foo: 'bar', traceId: 't-1', spanId: 's-1' });
+
+console.log(
+  'OK audit-logging.md: basic usage + redact + child logger + OpenTelemetry integration examples',
+);

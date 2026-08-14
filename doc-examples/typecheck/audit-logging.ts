@@ -1,12 +1,15 @@
 // Mirrors docs/audit-logging.md's code samples. Keep these in sync — see
 // doc-examples/README.md for the convention this file is part of.
 import express from 'express';
+import { trace } from '@opentelemetry/api';
 import {
   AuditLogger,
   ConsoleAuditSink,
   InMemoryAuditSink,
   callbackAuditSink,
   AuditAction,
+  openTelemetrySink,
+  traceContextTransform,
 } from '@novavey/multi-tenant-security-kit/audit';
 import type {
   AuditEvent,
@@ -78,3 +81,17 @@ app.use((req, res, next) => {
 // later, in a route:
 declare const req: express.Request & { auditLog: AuditLogger };
 req.auditLog.log({ action: 'invoices.exported', outcome: 'success' });
+
+// "OpenTelemetry integration"
+{
+  const getActiveSpan = () => trace.getActiveSpan();
+
+  const auditLog3 = new AuditLogger({
+    sinks: [
+      new ConsoleAuditSink(),
+      openTelemetrySink({ getActiveSpan }), // records each event as a span event
+    ],
+    redact: traceContextTransform({ getActiveSpan }), // stamps traceId/spanId onto every sink's event
+  });
+  void auditLog3;
+}
