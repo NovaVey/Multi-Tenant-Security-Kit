@@ -31,6 +31,7 @@ import {
   ForbiddenError,
 } from '../src/rbac/index.js';
 import { TenantRateLimiter, createRateLimitMiddleware } from '../src/rate-limit/index.js';
+import type { RateLimitResult } from '../src/rate-limit/index.js';
 import { AuditLogger, ConsoleAuditSink, AuditAction } from '../src/audit/index.js';
 import { generateTenantIsolationMigration, generateSetTenantContextSql } from '../src/rls/index.js';
 import { EnvKeyProvider, TenantEncryptor } from '../src/crypto/index.js';
@@ -108,8 +109,24 @@ app.use(express.json());
 // Resolve the tenant first — everything downstream depends on it.
 app.use(createTenantMiddleware({ resolver: headerTenantResolver('x-tenant-id') }));
 
-// Rate-limit per tenant.
-app.use(createRateLimitMiddleware({ limiter }));
+// Rate-limit per tenant. onLimited is only needed here to also audit-log
+// the denial — createRateLimitMiddleware's default onLimited (setting
+// Retry-After and responding 429) already covers the response itself.
+app.use(
+  createRateLimitMiddleware({
+    limiter,
+    onLimited: (_req, res, _next, result: RateLimitResult) => {
+      const retryAfterMs = Math.max(0, result.resetMs - Date.now());
+      auditLog.log({
+        action: AuditAction.RateLimitExceeded,
+        outcome: 'denied',
+        metadata: { retryAfterMs },
+      });
+      res.setHeader('Retry-After', Math.max(1, Math.ceil(retryAfterMs / 1000)));
+      res.status(429).json({ error: 'rate_limit_exceeded', retryAfterMs });
+    },
+  }),
+);
 
 app.get(
   '/invoices/:id',
@@ -176,7 +193,24 @@ app.post('/invoices/:id/notes', express.text(), async (req, res) => {
     res.status(404).json({ error: 'not_found' });
     return;
   }
-  assertTenantMatches(invoice);
+
+  try {
+    // Same guard, same audit-and-404 pattern as the GET handler above —
+    // a write path needs this exactly as much as a read path does.
+    assertTenantMatches(invoice);
+  } catch (err) {
+    if (err instanceof CrossTenantAccessError) {
+      auditLog.log({
+        action: AuditAction.TenantIsolationViolation,
+        targetId: invoice.id,
+        outcome: 'denied',
+        metadata: { expectedTenantId: err.expectedTenantId, actualTenantId: err.actualTenantId },
+      });
+      res.status(404).json({ error: 'not_found' }); // 404, not 403 — don't confirm the resource exists
+      return;
+    }
+    throw err;
+  }
 
   // Encrypt sensitive free-text under this tenant's own derived key before storing it.
   invoice.encryptedNotes = await encryptor.encrypt(invoice.tenantId, req.body as string);

@@ -154,19 +154,24 @@ throw `TenantContextError` if called outside any tenant context at all.
 
 ## API reference
 
-| Export                                | Kind     | Summary                                                      |
-| ------------------------------------- | -------- | ------------------------------------------------------------ |
-| `TenantContext<Extra>`                | type     | `{ tenantId: string; extra?: Extra }`                        |
-| `TenantScoped`                        | type     | `{ tenantId: string; [key: string]: unknown }`               |
-| `runWithTenant(context, fn)`          | function | Runs `fn` with `context` as the active tenant                |
-| `getCurrentTenant()`                  | function | Active `TenantContext`, or `undefined`                       |
-| `requireCurrentTenant()`              | function | Active `TenantContext`; throws `TenantContextError`          |
-| `getCurrentTenantId()`                | function | Active tenant id, or `undefined`                             |
-| `requireCurrentTenantId()`            | function | Active tenant id; throws `TenantContextError`                |
-| `assertSameTenant(expected, actual)`  | function | Throws `CrossTenantAccessError` if the two ids differ        |
-| `assertTenantMatches(resource)`       | function | Throws unless `resource.tenantId` matches the active tenant  |
-| `scopeToTenant(query)`                | function | Injects/validates the active tenant id into a query object   |
-| `createTenantMiddleware(options)`     | function | Builds the request-scoping middleware                        |
-| `headerTenantResolver(headerName?)`   | function | Resolver: reads a request header (default `x-tenant-id`)     |
-| `subdomainTenantResolver(options?)`   | function | Resolver: reads the leftmost hostname label                  |
-| `claimTenantResolver(decode, claim?)` | function | Resolver: reads a claim off an already-decoded token/session |
+| Export                                | Kind     | Summary                                                                                         |
+| ------------------------------------- | -------- | ----------------------------------------------------------------------------------------------- |
+| `TenantContext<Extra>`                | type     | `{ tenantId: string; extra?: Extra }`                                                           |
+| `TenantScoped`                        | type     | `{ tenantId: string; [key: string]: unknown }`                                                  |
+| `runWithTenant(context, fn)`          | function | Runs `fn` with `context` as the active tenant                                                   |
+| `getCurrentTenant()`                  | function | Active `TenantContext`, or `undefined`                                                          |
+| `requireCurrentTenant()`              | function | Active `TenantContext`; throws `TenantContextError`                                             |
+| `getCurrentTenantId()`                | function | Active tenant id, or `undefined`                                                                |
+| `requireCurrentTenantId()`            | function | Active tenant id; throws `TenantContextError`                                                   |
+| `assertSameTenant(expected, actual)`  | function | Throws `CrossTenantAccessError` if the two ids differ                                           |
+| `assertTenantMatches(resource)`       | function | Throws unless `resource.tenantId` matches the active tenant                                     |
+| `scopeToTenant(query)`                | function | Injects/validates the active tenant id into a query object                                      |
+| `createTenantMiddleware(options)`     | function | Builds the request-scoping middleware                                                           |
+| `headerTenantResolver(headerName?)`   | function | Resolver: reads a request header (default `x-tenant-id`)                                        |
+| `subdomainTenantResolver(options?)`   | function | Resolver: reads the leftmost hostname label                                                     |
+| `claimTenantResolver(decode, claim?)` | function | Resolver: reads a claim off an already-decoded token/session                                    |
+| `TenantMissingInfo`                   | type     | `{ reason: 'missing' } \| { reason: 'invalid'; tenantId }` — passed to `onMissing`              |
+| `SecurityKitError`                    | class    | Base class every error in this package extends; carries a stable `.code`                        |
+| `TenantContextError`                  | class    | Thrown by `requireCurrentTenant()`/`requireCurrentTenantId()`; `code: 'TENANT_CONTEXT_MISSING'` |
+| `CrossTenantAccessError`              | class    | Thrown by `assertSameTenant()`/`assertTenantMatches()`; `code: 'CROSS_TENANT_ACCESS_DENIED'`    |
+| `InvalidTenantIdError`                | class    | Thrown for a malformed tenant id; `code: 'INVALID_TENANT_ID'`                                   |

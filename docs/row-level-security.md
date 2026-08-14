@@ -218,13 +218,14 @@ mostly-default policies for most tables, with a few overridden.
 
 ## API reference
 
-| Export                                          | Kind     | Summary                                                                    |
-| ----------------------------------------------- | -------- | -------------------------------------------------------------------------- |
-| `RlsPolicyOptions`                              | type     | `{ table, tenantColumn?, policyName?, sessionSetting?, command?, roles? }` |
-| `generateEnableRlsSql(table)`                   | function | `ENABLE` + `FORCE ROW LEVEL SECURITY` statements                           |
-| `generateTenantIsolationPolicySql(options)`     | function | `CREATE POLICY` statement                                                  |
-| `generateSetTenantContextSql(sessionSetting?)`  | function | Session/transaction-scoped `set_config`, tenant id as `$1`                 |
-| `TenantWhereClauseResult`                       | type     | `{ clause, nextParamIndex }`                                               |
-| `tenantWhereClause(tenantColumn?, paramIndex?)` | function | Composable `"<column>" = $<n>` fragment                                    |
-| `generateTenantIsolationMigration(tables)`      | function | Full migration for a list of tables                                        |
-| `InvalidSqlIdentifierError`                     | class    | Thrown for an invalid identifier; `code: 'INVALID_SQL_IDENTIFIER'`         |
+| Export                                          | Kind     | Summary                                                                            |
+| ----------------------------------------------- | -------- | ---------------------------------------------------------------------------------- |
+| `RlsPolicyOptions`                              | type     | `{ table, tenantColumn?, policyName?, sessionSetting?, command?, roles? }`         |
+| `generateEnableRlsSql(table)`                   | function | `ENABLE` + `FORCE ROW LEVEL SECURITY` statements                                   |
+| `generateTenantIsolationPolicySql(options)`     | function | `CREATE POLICY` statement                                                          |
+| `generateSetTenantContextSql(sessionSetting?)`  | function | Session/transaction-scoped `set_config`, tenant id as `$1`                         |
+| `TenantWhereClauseResult`                       | type     | `{ clause, nextParamIndex }`                                                       |
+| `tenantWhereClause(tenantColumn?, paramIndex?)` | function | Composable `"<column>" = $<n>` fragment                                            |
+| `generateTenantIsolationMigration(tables)`      | function | Full migration for a list of tables                                                |
+| `SecurityKitError`                              | class    | Base class every error in this package extends; carries a stable `.code`           |
+| `InvalidSqlIdentifierError`                     | class    | Thrown for an invalid identifier or `paramIndex`; `code: 'INVALID_SQL_IDENTIFIER'` |

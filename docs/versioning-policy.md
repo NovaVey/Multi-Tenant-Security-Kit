@@ -29,6 +29,6 @@ This means: if you're not using anything flagged `@deprecated`, a `MAJOR` bump s
 
 ## What this policy does not cover
 
-- `examples/` and `doc-examples/` — reference code and this repo's own CI-verified doc samples, not published package exports. `examples/` in particular is explicitly excluded from typecheck (see `CONTRIBUTING.md`) precisely because it's illustrative, not load-bearing.
+- `examples/` and `doc-examples/` — reference code and this repo's own CI-verified doc samples, not published package exports. `examples/` in particular is explicitly excluded from typecheck (see `eslint.config.js`/`tsconfig.json`, or any individual `examples/*.ts` file's own header comment) precisely because it's illustrative, not load-bearing.
 - Anything under `test/` or internal, non-exported implementation details of `src/` — normal refactoring territory, changeable in a `PATCH` at any time as long as the public surface's observable behavior doesn't change.
 - This repository's own tooling versions (the Node version CI runs against, `@changesets/cli`'s version, etc.) — distinct from `engines.node`, which is what the _published package_ requires of a consumer's runtime, not what this repo's own CI/dev tooling happens to need.
