@@ -104,8 +104,15 @@ jobs:
       # GitHub Release below — no failed check, just a quietly incomplete
       # release that needed manual recovery. Verify against the npm
       # registry directly instead of trusting that string match.
+      #
+      # Only bother checking at all when changesets/action's own
+      # hasChangesets output says a publish was actually attempted this run
+      # (no pending changesets left) — skips the check (and its retry loop
+      # below) entirely on every ordinary "just opened/updated the Version
+      # Packages PR" run, which is most of them.
       - name: Check whether this run actually published a new version
         id: check-publish
+        if: steps.changesets.outputs.hasChangesets != 'true'
         run: |
           set -euo pipefail
           VERSION="$(node -p "require('./package.json').version")"
@@ -113,14 +120,26 @@ jobs:
           if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null 2>&1; then
             echo "v$VERSION is already tagged — nothing new to release."
             echo "published=false" >> "$GITHUB_OUTPUT"
-          elif npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
-            echo "$NAME@$VERSION is on npm and v$VERSION isn't tagged yet — this run published it."
-            echo "published=true" >> "$GITHUB_OUTPUT"
-            echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          else
-            echo "Nothing published this run (no pending changesets, or the Version Packages PR just opened/updated)."
-            echo "published=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          # npm's registry read path (what `npm view` hits) can lag behind
+          # a publish that just happened earlier in this same job — the
+          # 0.2.1 release proved this for real: `npm view` ran well under a
+          # second after `npx changeset publish` printed "Successfully
+          # published", and still 404'd. Retry with backoff (30s total)
+          # instead of trusting a single immediate read.
+          for attempt in 1 2 3 4 5 6; do
+            if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
+              echo "$NAME@$VERSION is on npm and v$VERSION isn't tagged yet — this run published it."
+              echo "published=true" >> "$GITHUB_OUTPUT"
+              echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "Attempt $attempt/6: $NAME@$VERSION not visible on npm's registry yet (propagation lag), retrying in 5s..."
+            sleep 5
+          done
+          echo "::warning::$NAME@$VERSION never became visible on npm after 30s of retries — treating as not published this run. If a publish genuinely happened, check npm and tag/release manually."
+          echo "published=false" >> "$GITHUB_OUTPUT"
 
       # Creates the vX.Y.Z tag AND the GitHub Release together — GitHub's
       # release-creation API auto-creates a tag_name that doesn't exist yet,
