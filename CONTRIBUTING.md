@@ -61,10 +61,14 @@ npm run verify
 This runs, in order: `format:check`, `lint`, `typecheck`, `test`, `build`,
 `verify:dist` (checks the built package's public entry points still share
 one `AsyncLocalStorage` instance — see `scripts/verify-dist-singleton.mjs`),
-and `verify:docs` (type-checks and runs every file in `doc-examples/`
-against that same build). A PR won't pass CI unless this passes locally
-first. `test:integration` is separate (needs Docker) — run it yourself if
-your change touches `src/rls/`.
+`verify:docs` (type-checks and runs every file in `doc-examples/` against
+that same build), and `verify:types` (runs `@arethetypeswrong/cli` against
+the real `npm pack` tarball — catches a package.json `exports`/`typesVersions`
+mistake that breaks type resolution for consumers, which `tsc --noEmit`
+alone can't: that only checks source-adjacent files, never what a consumer
+actually resolves through the published `exports` map). A PR won't pass CI
+unless this passes locally first. `test:integration` is separate (needs
+Docker) — run it yourself if your change touches `src/rls/`.
 
 ## Commit messages
 
