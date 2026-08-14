@@ -37,15 +37,18 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
-permissions:
-  contents: write # to push the Version Packages branch/commit and git tags
-  pull-requests: write # to open/update the Version Packages PR
-  id-token: write # required for npm provenance
-
 jobs:
   release:
     name: release
     runs-on: ubuntu-latest
+    # Scoped to this job, not declared workflow-wide, so the elevated
+    # GITHUB_TOKEN is only minted for the one job that needs it (OpenSSF
+    # Scorecard's Token-Permissions check flags workflow-level `write` as
+    # broader than necessary even when every job in the file needs it).
+    permissions:
+      contents: write # to push the Version Packages branch/commit and git tags
+      pull-requests: write # to open/update the Version Packages PR
+      id-token: write # required for npm provenance
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:

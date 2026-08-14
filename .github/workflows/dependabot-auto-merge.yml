@@ -23,14 +23,18 @@ name: Dependabot auto-merge
 
 on: pull_request
 
-permissions:
-  contents: write
-  pull-requests: write
-
 jobs:
   dependabot:
     runs-on: ubuntu-latest
     if: github.actor == 'dependabot[bot]'
+    # Scoped to this job, not declared workflow-wide — same reasoning as
+    # release.yml (OpenSSF Scorecard's Token-Permissions check flags
+    # workflow-level `write`). GitHub still reads this from the workflow
+    # file on the default branch to decide whether dependabot[bot]'s PR
+    # gets the write-scoped token described above.
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - name: Fetch Dependabot metadata
         id: metadata

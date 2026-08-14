@@ -155,6 +155,9 @@
     "verify": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build && npm run verify:dist && npm run verify:docs && npm run verify:types",
     "prepublishOnly": "npm run verify"
   },
+  "overrides": {
+    "esbuild": "^0.28.1"
+  },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
     "@auth/express": "^0.12.3",
