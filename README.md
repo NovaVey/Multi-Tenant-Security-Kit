@@ -1,9 +1,9 @@
 # Multi-Tenant Security Kit
 
-[![CI](https://github.com/NovaVey/multi-tenant-security-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/NovaVey/multi-tenant-security-kit/actions/workflows/ci.yml)
+[![CI](https://github.com/NovaVey/Multi-Tenant-Security-Kit/actions/workflows/ci.yml/badge.svg)](https://github.com/NovaVey/Multi-Tenant-Security-Kit/actions/workflows/ci.yml)
 [![npm version](https://img.shields.io/npm/v/%40novavey%2Fmulti-tenant-security-kit.svg)](https://www.npmjs.com/package/@novavey/multi-tenant-security-kit)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/NovaVey/multi-tenant-security-kit/badge)](https://scorecard.dev/viewer/?uri=github.com/NovaVey/multi-tenant-security-kit)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/NovaVey/Multi-Tenant-Security-Kit/badge)](https://scorecard.dev/viewer/?uri=github.com/NovaVey/Multi-Tenant-Security-Kit)
 
 A framework-agnostic TypeScript toolkit for building secure multi-tenant
 applications. It gives you the six pieces every multi-tenant backend ends up

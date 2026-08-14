@@ -14,13 +14,13 @@
     "opentelemetry",
     "typescript"
   ],
-  "homepage": "https://github.com/NovaVey/multi-tenant-security-kit#readme",
+  "homepage": "https://github.com/NovaVey/Multi-Tenant-Security-Kit#readme",
   "bugs": {
-    "url": "https://github.com/NovaVey/multi-tenant-security-kit/issues"
+    "url": "https://github.com/NovaVey/Multi-Tenant-Security-Kit/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/NovaVey/multi-tenant-security-kit.git"
+    "url": "git+https://github.com/NovaVey/Multi-Tenant-Security-Kit.git"
   },
   "license": "MIT",
   "author": "Tyler Pepitone / Nova Vey Engineering",

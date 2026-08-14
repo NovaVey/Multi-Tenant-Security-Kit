@@ -406,12 +406,12 @@ AuditSinkError) => ...`, as shown in docs/audit-logging.md, previously
   manual branch-protection setup checklist
   (`docs/github-governance.md`).
 
-[Unreleased]: https://github.com/NovaVey/multi-tenant-security-kit/compare/v1.1.0...HEAD
-[1.1.0]: https://github.com/NovaVey/multi-tenant-security-kit/releases/tag/v1.1.0
-[1.0.0]: https://github.com/NovaVey/multi-tenant-security-kit/releases/tag/v1.0.0
-[0.3.0]: https://github.com/NovaVey/multi-tenant-security-kit/releases/tag/v0.3.0
-[0.2.1]: https://github.com/NovaVey/multi-tenant-security-kit/releases/tag/v0.2.1
-[0.2.0]: https://github.com/NovaVey/multi-tenant-security-kit/releases/tag/v0.2.0
-[0.1.2]: https://github.com/NovaVey/multi-tenant-security-kit/releases/tag/v0.1.2
-[0.1.1]: https://github.com/NovaVey/multi-tenant-security-kit/releases/tag/v0.1.1
-[0.1.0]: https://github.com/NovaVey/multi-tenant-security-kit/releases/tag/v0.1.0
+[Unreleased]: https://github.com/NovaVey/Multi-Tenant-Security-Kit/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/NovaVey/Multi-Tenant-Security-Kit/releases/tag/v1.1.0
+[1.0.0]: https://github.com/NovaVey/Multi-Tenant-Security-Kit/releases/tag/v1.0.0
+[0.3.0]: https://github.com/NovaVey/Multi-Tenant-Security-Kit/releases/tag/v0.3.0
+[0.2.1]: https://github.com/NovaVey/Multi-Tenant-Security-Kit/releases/tag/v0.2.1
+[0.2.0]: https://github.com/NovaVey/Multi-Tenant-Security-Kit/releases/tag/v0.2.0
+[0.1.2]: https://github.com/NovaVey/Multi-Tenant-Security-Kit/releases/tag/v0.1.2
+[0.1.1]: https://github.com/NovaVey/Multi-Tenant-Security-Kit/releases/tag/v0.1.1
+[0.1.0]: https://github.com/NovaVey/Multi-Tenant-Security-Kit/releases/tag/v0.1.0

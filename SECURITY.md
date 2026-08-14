@@ -22,7 +22,7 @@ a bounded backport window) will be updated at that time.
 Report vulnerabilities privately using GitHub's Security Advisories flow:
 
 - Go to the **Security** tab of this repository -> **Report a vulnerability**, or
-- Use this link directly: https://github.com/NovaVey/multi-tenant-security-kit/security/advisories/new
+- Use this link directly: https://github.com/NovaVey/Multi-Tenant-Security-Kit/security/advisories/new
 
 Include as much detail as you can: affected version(s), the module involved
 (e.g. `tenant`, `rbac`, `rate-limit`, `audit`, `rls`, `crypto`), reproduction
