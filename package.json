@@ -1,6 +1,6 @@
 {
   "name": "@novavey/multi-tenant-security-kit",
-  "version": "0.3.0",
+  "version": "1.0.0",
   "description": "A framework-agnostic toolkit for building secure multi-tenant applications: tenant isolation, RBAC, per-tenant rate limiting, audit logging, Postgres row-level security helpers, and per-tenant encryption.",
   "keywords": [
     "multi-tenant",
