@@ -12,13 +12,13 @@ clauses unconditionally, so calling it with `command: 'SELECT'`,
 
 Now the emitted clauses match `command`:
 
-| `command`        | `USING` | `WITH CHECK` |
-| ----------------- | ------- | ------------ |
-| `ALL` (default)    | yes     | yes          |
-| `SELECT`           | yes     | —            |
-| `INSERT`           | —       | yes          |
-| `UPDATE`           | yes     | yes          |
-| `DELETE`           | yes     | —            |
+| `command`       | `USING` | `WITH CHECK` |
+| --------------- | ------- | ------------ |
+| `ALL` (default) | yes     | yes          |
+| `SELECT`        | yes     | —            |
+| `INSERT`        | —       | yes          |
+| `UPDATE`        | yes     | yes          |
+| `DELETE`        | yes     | —            |
 
 No change for the default (`ALL`) or `UPDATE` — the generated SQL for
 those two was already correct. If you called this function directly with
