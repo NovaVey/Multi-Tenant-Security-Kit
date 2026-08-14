@@ -6,6 +6,21 @@ follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-14
+
+### Changed
+
+- **Minimum supported Node.js version raised from `>=20.19` to `>=22`.**
+  Node 20 ("Iron") LTS has reached its own end-of-life; per
+  `docs/versioning-policy.md`, raising `engines.node` is a `minor` bump,
+  not `major` — it's driven by upstream Node's own release schedule, not
+  a change to this package's API, but can still break a consumer running
+  an old runtime. The CI matrix, `.nvmrc`, and `README.md`'s stated
+  requirement all move to Node 22 in the same change; the `test` job's
+  CI matrix drops to a single Node 22 entry (kept as a one-entry matrix
+  specifically so its required-status-check name stays `test (22)`
+  unchanged — only `test (20)` stops reporting).
+
 ## [0.2.1] - 2026-08-14
 
 ### Fixed
@@ -258,7 +273,8 @@ AuditSinkError) => ...`, as shown in docs/audit-logging.md, previously
   manual branch-protection setup checklist
   (`docs/github-governance.md`).
 
-[Unreleased]: https://github.com/NovaVey/multi-tenant-security-kit/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/NovaVey/multi-tenant-security-kit/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/NovaVey/multi-tenant-security-kit/releases/tag/v0.3.0
 [0.2.1]: https://github.com/NovaVey/multi-tenant-security-kit/releases/tag/v0.2.1
 [0.2.0]: https://github.com/NovaVey/multi-tenant-security-kit/releases/tag/v0.2.0
 [0.1.2]: https://github.com/NovaVey/multi-tenant-security-kit/releases/tag/v0.1.2
