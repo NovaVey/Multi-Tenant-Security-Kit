@@ -106,20 +106,32 @@ jobs:
       # registry directly instead of trusting that string match.
       #
       # Only bother checking at all when changesets/action's own
-      # has-changesets output (steps.changesets.outputs['has-changesets'] —
-      # note the hyphen: changesets/action's action.yml declares this output
-      # as "has-changesets", not "hasChangesets"; GitHub Actions' outputs
-      # context does case-insensitive but NOT hyphen-insensitive property
-      # lookup, so the un-hyphenated form silently evaluates to an always-
-      # true `null != 'true'` instead of erroring — verified by pulling
-      # changesets/action's own source rather than assuming) says a publish
-      # was actually attempted this run (no pending changesets left) —
-      # skips the check (and its retry loop below) entirely on every
-      # ordinary "just opened/updated the Version Packages PR" run, which is
-      # most of them.
+      # hasChangesets output says a publish was actually attempted this run
+      # (no pending changesets left) — skips the check (and its retry loop
+      # below) entirely on every ordinary "just opened/updated the Version
+      # Packages PR" run, which is most of them.
+      #
+      # CORRECTED (2026-08-14): a prior version of this comment/condition
+      # used steps.changesets.outputs['has-changesets'] (kebab-case),
+      # believing that was the action's real output name — verified at the
+      # time against changesets/action's default branch via a fresh clone,
+      # which turned out to be *unreleased* source ahead of what @v1
+      # actually points to. The actually-deployed tag this workflow runs
+      # (changesets/action@v1, currently resolving to v1.9.0) declares its
+      # outputs as camelCase — hasChangesets, publishedPackages,
+      # pullRequestNumber, published — confirmed by cloning the v1 tag
+      # itself (`git clone --branch v1`), not just the default branch, and
+      # reading its action.yml directly. The kebab-case key doesn't exist,
+      # so the condition below silently evaluated to an always-true
+      # `null != 'true'` — this step ran on every single push to main
+      # instead of only after a real publish attempt, and the very next
+      # ordinary "Version Packages PR update" run failed outright (the
+      # hard-failure path added alongside this same mistake did exactly
+      # its job: turned a real bug into an immediately visible red run
+      # instead of a permanently-silent no-op). Reverted to camelCase.
       - name: Check whether this run actually published a new version
         id: check-publish
-        if: steps.changesets.outputs['has-changesets'] != 'true'
+        if: steps.changesets.outputs.hasChangesets != 'true'
         run: |
           set -euo pipefail
           VERSION="$(node -p "require('./package.json').version")"
