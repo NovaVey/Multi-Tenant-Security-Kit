@@ -11,4 +11,4 @@ export { requirePermission, subjectFromRequestRoles } from './middleware.js';
 // Re-exported so consumers importing only this subpath can catch/narrow on
 // the error types this module's own functions throw, without also
 // importing from the package root.
-export { ForbiddenError, RbacConfigurationError } from '../errors.js';
+export { SecurityKitError, ForbiddenError, RbacConfigurationError } from '../errors.js';

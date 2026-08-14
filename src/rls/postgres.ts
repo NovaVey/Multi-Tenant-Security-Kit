@@ -23,11 +23,12 @@
  *    from config files, so we do not trust that "developer-supplied" implies
  *    "safe to splice into SQL". Every identifier accepted by this module is
  *    validated against a strict `^[a-zA-Z_][a-zA-Z0-9_]*$` allowlist pattern
- *    before it is used, and a failing value causes an immediate `TypeError`
- *    naming both the offending value and which parameter rejected it. Every
- *    identifier is *also* double-quoted in the emitted SQL as defense in
- *    depth, so even a hypothetical future relaxation of the validation still
- *    can't be used to inject bare SQL keywords.
+ *    before it is used, and a failing value causes an immediate
+ *    {@link InvalidSqlIdentifierError} naming both the offending value and
+ *    which parameter rejected it. Every identifier is *also* double-quoted
+ *    in the emitted SQL as defense in depth, so even a hypothetical future
+ *    relaxation of the validation still can't be used to inject bare SQL
+ *    keywords.
  *
  * 2. **The tenant id value** itself — the thing a real request actually
  *    carries — is genuine runtime user input. It is NEVER interpolated into
@@ -39,6 +40,7 @@
  *    id as a function parameter and interpolating it.
  */
 
+import { InvalidSqlIdentifierError } from '../errors.js';
 import type { RlsPolicyOptions } from './types.js';
 
 /**
@@ -52,9 +54,9 @@ import type { RlsPolicyOptions } from './types.js';
 export const IDENTIFIER_PATTERN = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 
 /**
- * Validates that `value` is safe to use as a SQL identifier, throwing a
- * `TypeError` that names both the offending value and the parameter it came
- * from if not.
+ * Validates that `value` is safe to use as a SQL identifier, throwing an
+ * {@link InvalidSqlIdentifierError} that names both the offending value and
+ * the parameter it came from if not.
  *
  * This is the single choke point every identifier accepted by this module
  * passes through — table names, column names, policy names, role names, and
@@ -64,7 +66,9 @@ export const IDENTIFIER_PATTERN = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
  */
 function assertValidIdentifier(value: string, paramName: string): void {
   if (typeof value !== 'string' || !IDENTIFIER_PATTERN.test(value)) {
-    throw new TypeError(
+    throw new InvalidSqlIdentifierError(
+      value,
+      paramName,
       `Invalid SQL identifier for "${paramName}": ${JSON.stringify(value)}. ` +
         `Identifiers must match ${IDENTIFIER_PATTERN.toString()}.`,
     );
@@ -80,7 +84,7 @@ function assertValidIdentifier(value: string, paramName: string): void {
  */
 function assertValidSessionSetting(value: string, paramName: string): void {
   if (typeof value !== 'string' || value.length === 0) {
-    throw new TypeError(`Invalid SQL identifier for "${paramName}": ${JSON.stringify(value)}.`);
+    throw new InvalidSqlIdentifierError(value, paramName);
   }
   const segments = value.split('.');
   for (const segment of segments) {
@@ -105,7 +109,7 @@ function quoteIdentifier(value: string): string {
  * that outcome requires deliberately dropping the second line, not simply
  * forgetting a flag.
  *
- * @throws {TypeError} if `table` is not a valid SQL identifier.
+ * @throws {InvalidSqlIdentifierError} if `table` is not a valid SQL identifier.
  */
 export function generateEnableRlsSql(table: string): string {
   assertValidIdentifier(table, 'table');
@@ -123,7 +127,7 @@ export function generateEnableRlsSql(table: string): string {
  * row) are set to the same predicate, so the policy can't be used to read
  * one tenant's rows while writing as another.
  *
- * @throws {TypeError} if `options.table`, `options.tenantColumn`,
+ * @throws {InvalidSqlIdentifierError} if `options.table`, `options.tenantColumn`,
  * `options.policyName`, or `options.sessionSetting` is not a valid SQL
  * identifier (or, for `sessionSetting`, dot-separated identifier).
  */
@@ -183,7 +187,7 @@ export function generateTenantIsolationPolicySql(options: RlsPolicyOptions): str
  * the setting to the current transaction, so it can't leak onto a pooled
  * connection reused by a later, differently-tenanted request.
  *
- * @throws {TypeError} if `sessionSetting` is not a valid (dot-separated) SQL identifier.
+ * @throws {InvalidSqlIdentifierError} if `sessionSetting` is not a valid (dot-separated) SQL identifier.
  */
 export function generateSetTenantContextSql(sessionSetting = 'app.current_tenant_id'): string {
   assertValidSessionSetting(sessionSetting, 'sessionSetting');
@@ -209,7 +213,7 @@ export interface TenantWhereClauseResult {
  * number. Callers bind the actual tenant id as the `paramIndex`-th
  * parameter of their query.
  *
- * @throws {TypeError} if `tenantColumn` is not a valid SQL identifier.
+ * @throws {InvalidSqlIdentifierError} if `tenantColumn` is not a valid SQL identifier.
  */
 export function tenantWhereClause(
   tenantColumn = 'tenant_id',
@@ -233,7 +237,7 @@ export function tenantWhereClause(
  * how a real migration usually looks: mostly-default policies for most
  * tables, with a few overridden.
  *
- * @throws {TypeError} if any table's resolved options contain an invalid SQL identifier.
+ * @throws {InvalidSqlIdentifierError} if any table's resolved options contain an invalid SQL identifier.
  */
 export function generateTenantIsolationMigration(tables: Array<string | RlsPolicyOptions>): string {
   const header =

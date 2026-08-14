@@ -13,3 +13,7 @@ export {
   tenantWhereClause,
   generateTenantIsolationMigration,
 } from './postgres.js';
+// Re-exported so consumers importing only this subpath can catch/narrow on
+// the error types this module's own functions throw, without also
+// importing from the package root.
+export { SecurityKitError, InvalidSqlIdentifierError } from '../errors.js';

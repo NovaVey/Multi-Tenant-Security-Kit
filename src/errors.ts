@@ -48,6 +48,30 @@ export class CrossTenantAccessError extends SecurityKitError {
   }
 }
 
+/**
+ * Thrown by the `rls` module when a value that must be a safe, allowlisted
+ * SQL identifier (a table/column/policy/role/session-setting name) isn't
+ * one — e.g. `generateEnableRlsSql('users; DROP TABLE users;--')`.
+ *
+ * Every value this error can be thrown for is developer-supplied at
+ * migration-authoring time, never end-user request input (see
+ * `src/rls/postgres.ts`'s own security-model doc comment for why that
+ * distinction matters) — this error means a mistake in code generating a
+ * migration, not a caught attack.
+ */
+export class InvalidSqlIdentifierError extends SecurityKitError {
+  /** Which parameter (`table`, `tenantColumn`, `sessionSetting`, ...) rejected the value. */
+  readonly paramName: string;
+
+  constructor(value: unknown, paramName: string, message?: string) {
+    super(
+      message ?? `Invalid SQL identifier for "${paramName}": ${JSON.stringify(value)}.`,
+      'INVALID_SQL_IDENTIFIER',
+    );
+    this.paramName = paramName;
+  }
+}
+
 /** Thrown when an RBAC policy denies a permission check. */
 export class ForbiddenError extends SecurityKitError {
   readonly permission?: string | undefined;

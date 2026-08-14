@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { InvalidSqlIdentifierError, SecurityKitError } from '../../src/errors.js';
 import {
   generateEnableRlsSql,
   generateSetTenantContextSql,
@@ -47,8 +48,8 @@ describe('generateEnableRlsSql', () => {
   });
 
   for (const bad of INVALID_IDENTIFIERS) {
-    it(`rejects invalid table name ${JSON.stringify(bad)} with a TypeError`, () => {
-      expect(() => generateEnableRlsSql(bad)).toThrow(TypeError);
+    it(`rejects invalid table name ${JSON.stringify(bad)} with an InvalidSqlIdentifierError`, () => {
+      expect(() => generateEnableRlsSql(bad)).toThrow(InvalidSqlIdentifierError);
     });
 
     it(`error message for invalid table name ${JSON.stringify(bad)} names the offending value and parameter`, () => {
@@ -56,10 +57,13 @@ describe('generateEnableRlsSql', () => {
         generateEnableRlsSql(bad);
         expect.unreachable('should have thrown');
       } catch (err) {
-        expect(err).toBeInstanceOf(TypeError);
-        const message = (err as TypeError).message;
-        expect(message).toContain('table');
-        expect(message).toContain(JSON.stringify(bad));
+        expect(err).toBeInstanceOf(InvalidSqlIdentifierError);
+        expect(err).toBeInstanceOf(SecurityKitError);
+        const error = err as InvalidSqlIdentifierError;
+        expect(error.code).toBe('INVALID_SQL_IDENTIFIER');
+        expect(error.paramName).toBe('table');
+        expect(error.message).toContain('table');
+        expect(error.message).toContain(JSON.stringify(bad));
       }
     });
   }
@@ -147,38 +151,40 @@ describe('generateTenantIsolationPolicySql', () => {
   });
 
   for (const bad of INVALID_IDENTIFIERS) {
-    it(`rejects invalid table ${JSON.stringify(bad)} with a TypeError`, () => {
-      expect(() => generateTenantIsolationPolicySql({ table: bad })).toThrow(TypeError);
+    it(`rejects invalid table ${JSON.stringify(bad)} with an InvalidSqlIdentifierError`, () => {
+      expect(() => generateTenantIsolationPolicySql({ table: bad })).toThrow(
+        InvalidSqlIdentifierError,
+      );
     });
 
-    it(`rejects invalid tenantColumn ${JSON.stringify(bad)} with a TypeError`, () => {
+    it(`rejects invalid tenantColumn ${JSON.stringify(bad)} with an InvalidSqlIdentifierError`, () => {
       expect(() =>
         generateTenantIsolationPolicySql({ table: 'invoices', tenantColumn: bad }),
-      ).toThrow(TypeError);
+      ).toThrow(InvalidSqlIdentifierError);
     });
 
-    it(`rejects invalid policyName ${JSON.stringify(bad)} with a TypeError`, () => {
+    it(`rejects invalid policyName ${JSON.stringify(bad)} with an InvalidSqlIdentifierError`, () => {
       expect(() =>
         generateTenantIsolationPolicySql({ table: 'invoices', policyName: bad }),
-      ).toThrow(TypeError);
+      ).toThrow(InvalidSqlIdentifierError);
     });
   }
 
   for (const bad of INVALID_SESSION_SETTINGS) {
-    it(`rejects invalid sessionSetting ${JSON.stringify(bad)} with a TypeError`, () => {
+    it(`rejects invalid sessionSetting ${JSON.stringify(bad)} with an InvalidSqlIdentifierError`, () => {
       expect(() =>
         generateTenantIsolationPolicySql({ table: 'invoices', sessionSetting: bad }),
-      ).toThrow(TypeError);
+      ).toThrow(InvalidSqlIdentifierError);
     });
   }
 
-  it('rejects an invalid role name in roles with a TypeError', () => {
+  it('rejects an invalid role name in roles with an InvalidSqlIdentifierError', () => {
     expect(() =>
       generateTenantIsolationPolicySql({
         table: 'invoices',
         roles: ['app_user', 'users; DROP TABLE users;--'],
       }),
-    ).toThrow(TypeError);
+    ).toThrow(InvalidSqlIdentifierError);
   });
 
   it('accepts a multi-segment sessionSetting where every segment is valid', () => {
@@ -224,8 +230,8 @@ describe('generateSetTenantContextSql', () => {
   });
 
   for (const bad of INVALID_SESSION_SETTINGS) {
-    it(`rejects invalid sessionSetting ${JSON.stringify(bad)} with a TypeError`, () => {
-      expect(() => generateSetTenantContextSql(bad)).toThrow(TypeError);
+    it(`rejects invalid sessionSetting ${JSON.stringify(bad)} with an InvalidSqlIdentifierError`, () => {
+      expect(() => generateSetTenantContextSql(bad)).toThrow(InvalidSqlIdentifierError);
     });
   }
 });
@@ -253,8 +259,8 @@ describe('tenantWhereClause', () => {
   });
 
   for (const bad of INVALID_IDENTIFIERS) {
-    it(`rejects invalid tenantColumn ${JSON.stringify(bad)} with a TypeError`, () => {
-      expect(() => tenantWhereClause(bad)).toThrow(TypeError);
+    it(`rejects invalid tenantColumn ${JSON.stringify(bad)} with an InvalidSqlIdentifierError`, () => {
+      expect(() => tenantWhereClause(bad)).toThrow(InvalidSqlIdentifierError);
     });
   }
 });
@@ -303,15 +309,15 @@ describe('generateTenantIsolationMigration', () => {
     );
   });
 
-  it('propagates a TypeError when any table entry has an invalid identifier', () => {
+  it('propagates an InvalidSqlIdentifierError when any table entry has an invalid identifier', () => {
     expect(() =>
       generateTenantIsolationMigration(['invoices', 'users; DROP TABLE users;--']),
-    ).toThrow(TypeError);
+    ).toThrow(InvalidSqlIdentifierError);
   });
 
-  it('propagates a TypeError when an options-object entry has an invalid tenantColumn', () => {
+  it('propagates an InvalidSqlIdentifierError when an options-object entry has an invalid tenantColumn', () => {
     expect(() =>
       generateTenantIsolationMigration([{ table: 'orders', tenantColumn: 'my column' }]),
-    ).toThrow(TypeError);
+    ).toThrow(InvalidSqlIdentifierError);
   });
 });
