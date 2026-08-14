@@ -20,4 +20,4 @@ export type { OtelSpanLike, OtelHookOptions } from './otel.js';
 // Re-exported so consumers importing only this subpath can catch/narrow on
 // the error type `AuditLoggerOptions.onSinkError` receives, without also
 // importing from the package root.
-export { AuditSinkError } from '../errors.js';
+export { SecurityKitError, AuditSinkError } from '../errors.js';

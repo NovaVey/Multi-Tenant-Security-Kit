@@ -102,7 +102,10 @@ not by a maintainer manually bumping `package.json` and pushing a git tag:
    `npx changeset` and follow the prompts (which kind of bump —
    `patch`/`minor`/`major` — and a short summary). Commit the generated
    `.changeset/*.md` file as part of your PR. Purely internal changes
-   (tests, CI, tooling, docs that aren't shipped) don't need one.
+   (tests, CI, tooling, docs that aren't shipped) don't need one. See
+   [docs/versioning-policy.md](./docs/versioning-policy.md) for precisely
+   what does and doesn't count as a `patch`/`minor`/`major` change here —
+   don't guess.
 2. On every push to `main`, [`.github/workflows/release.yml`](./.github/workflows/release.yml)
    runs the full verify gate, then hands off to `changesets/action`, which
    keeps a **"Version Packages"** PR up to date with every merged

@@ -173,6 +173,13 @@ dependency, peer or otherwise.
 - [Encryption](./docs/encryption.md) — per-tenant AES-256-GCM, key providers
 - [Auth provider integrations](./docs/auth-integrations.md) — Auth.js, Clerk, Auth0
 
+## Versioning
+
+This project follows [Semantic Versioning](https://semver.org/). See
+[docs/versioning-policy.md](./docs/versioning-policy.md) for exactly what
+that means here — what counts as the public API, what triggers a
+`PATCH`/`MINOR`/`MAJOR` bump, and how deprecation works.
+
 ## Contributing
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for local setup, the codebase

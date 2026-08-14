@@ -8,6 +8,8 @@ import {
   generateEnableRlsSql,
   generateTenantIsolationPolicySql,
   generateTenantIsolationMigration,
+  InvalidSqlIdentifierError,
+  SecurityKitError,
 } from '@novavey/multi-tenant-security-kit/rls';
 
 // "Setting up a table"
@@ -41,5 +43,18 @@ generateTenantIsolationMigration([
   'line_items',
   { table: 'audit_events', command: 'SELECT' },
 ]);
+
+// "Security model" — an invalid identifier throws InvalidSqlIdentifierError
+// (a SecurityKitError, code INVALID_SQL_IDENTIFIER), not a bare TypeError.
+assert.throws(
+  () => generateEnableRlsSql('users; DROP TABLE users;--'),
+  (err) => {
+    assert.ok(err instanceof InvalidSqlIdentifierError);
+    assert.ok(err instanceof SecurityKitError);
+    assert.equal(err.code, 'INVALID_SQL_IDENTIFIER');
+    assert.equal(err.paramName, 'table');
+    return true;
+  },
+);
 
 console.log('OK row-level-security.md: SQL generation examples match the doc comments exactly');

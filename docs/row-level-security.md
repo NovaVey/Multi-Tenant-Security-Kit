@@ -24,8 +24,10 @@ opposite ways on purpose:
    `^[a-zA-Z_][a-zA-Z0-9_]*$` allowlist before using it, and double-quotes it
    in the output as defense in depth — generated migrations get copy-pasted
    and re-templated often enough that "developer-supplied" shouldn't imply
-   "safe to splice into SQL" unconditionally. An invalid identifier throws a
-   `TypeError` naming the offending value and parameter.
+   "safe to splice into SQL" unconditionally. An invalid identifier throws
+   an `InvalidSqlIdentifierError` (`code: 'INVALID_SQL_IDENTIFIER'`) naming
+   the offending value and parameter — like every error this package
+   throws, it extends the shared `SecurityKitError` base.
 2. **The tenant id value** is genuine runtime, per-request user input, and it
    is **never** interpolated into any string this module returns.
    `generateSetTenantContextSql` only ever emits the placeholder `$1` —
@@ -192,3 +194,4 @@ mostly-default policies for most tables, with a few overridden.
 | `TenantWhereClauseResult`                       | type     | `{ clause, nextParamIndex }`                                               |
 | `tenantWhereClause(tenantColumn?, paramIndex?)` | function | Composable `"<column>" = $<n>` fragment                                    |
 | `generateTenantIsolationMigration(tables)`      | function | Full migration for a list of tables                                        |
+| `InvalidSqlIdentifierError`                     | class    | Thrown for an invalid identifier; `code: 'INVALID_SQL_IDENTIFIER'`         |

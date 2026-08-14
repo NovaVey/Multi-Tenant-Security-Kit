@@ -16,6 +16,7 @@
 import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
 
+import { InvalidSqlIdentifierError } from '../../src/errors.js';
 import {
   IDENTIFIER_PATTERN,
   generateEnableRlsSql,
@@ -56,17 +57,19 @@ const SINGLE_SEGMENT_INJECTION_PAYLOADS = [
 describe('RLS SQL generation — injection-payload corpus', () => {
   it('single-segment identifier parameters reject every payload in the corpus', () => {
     for (const bad of SINGLE_SEGMENT_INJECTION_PAYLOADS) {
-      expect(() => generateEnableRlsSql(bad)).toThrow(TypeError);
-      expect(() => tenantWhereClause(bad)).toThrow(TypeError);
-      expect(() => generateTenantIsolationPolicySql({ table: bad })).toThrow(TypeError);
+      expect(() => generateEnableRlsSql(bad)).toThrow(InvalidSqlIdentifierError);
+      expect(() => tenantWhereClause(bad)).toThrow(InvalidSqlIdentifierError);
+      expect(() => generateTenantIsolationPolicySql({ table: bad })).toThrow(
+        InvalidSqlIdentifierError,
+      );
       expect(() =>
         generateTenantIsolationPolicySql({ table: 'invoices', tenantColumn: bad }),
-      ).toThrow(TypeError);
+      ).toThrow(InvalidSqlIdentifierError);
       expect(() =>
         generateTenantIsolationPolicySql({ table: 'invoices', policyName: bad }),
-      ).toThrow(TypeError);
+      ).toThrow(InvalidSqlIdentifierError);
       expect(() => generateTenantIsolationPolicySql({ table: 'invoices', roles: [bad] })).toThrow(
-        TypeError,
+        InvalidSqlIdentifierError,
       );
     }
   });
@@ -84,7 +87,7 @@ describe('RLS SQL generation — injection-payload corpus', () => {
       'app.',
     ];
     for (const bad of dotAwarePayloads) {
-      expect(() => generateSetTenantContextSql(bad)).toThrow(TypeError);
+      expect(() => generateSetTenantContextSql(bad)).toThrow(InvalidSqlIdentifierError);
     }
   });
 });
@@ -94,7 +97,7 @@ describe('RLS SQL generation — fuzzing against IDENTIFIER_PATTERN', () => {
     fc.assert(
       fc.property(fc.string({ maxLength: 200 }), (table) => {
         if (!IDENTIFIER_PATTERN.test(table)) {
-          expect(() => generateEnableRlsSql(table)).toThrow(TypeError);
+          expect(() => generateEnableRlsSql(table)).toThrow(InvalidSqlIdentifierError);
           return;
         }
         expect(generateEnableRlsSql(table)).toBe(
@@ -112,7 +115,9 @@ describe('RLS SQL generation — fuzzing against IDENTIFIER_PATTERN', () => {
         const segments = sessionSetting.split('.');
         const shouldAccept = segments.every((segment) => IDENTIFIER_PATTERN.test(segment));
         if (!shouldAccept) {
-          expect(() => generateSetTenantContextSql(sessionSetting)).toThrow(TypeError);
+          expect(() => generateSetTenantContextSql(sessionSetting)).toThrow(
+            InvalidSqlIdentifierError,
+          );
           return;
         }
         const sql = generateSetTenantContextSql(sessionSetting);
@@ -132,7 +137,9 @@ describe('RLS SQL generation — fuzzing against IDENTIFIER_PATTERN', () => {
         fc.integer({ min: 1, max: 50 }),
         (tenantColumn, paramIndex) => {
           if (!IDENTIFIER_PATTERN.test(tenantColumn)) {
-            expect(() => tenantWhereClause(tenantColumn, paramIndex)).toThrow(TypeError);
+            expect(() => tenantWhereClause(tenantColumn, paramIndex)).toThrow(
+              InvalidSqlIdentifierError,
+            );
             return;
           }
           const { clause, nextParamIndex } = tenantWhereClause(tenantColumn, paramIndex);
@@ -151,7 +158,7 @@ describe('RLS SQL generation — fuzzing against IDENTIFIER_PATTERN', () => {
         (roles) => {
           const call = () => generateTenantIsolationPolicySql({ table: 'invoices', roles });
           if (roles.some((role) => !IDENTIFIER_PATTERN.test(role))) {
-            expect(call).toThrow(TypeError);
+            expect(call).toThrow(InvalidSqlIdentifierError);
           } else {
             expect(call).not.toThrow();
           }
