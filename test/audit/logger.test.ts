@@ -86,6 +86,57 @@ describe('AuditLogger', () => {
     expect(sink.events[0]?.metadata).toEqual({ redacted: true });
   });
 
+  // Regression: log()'s own JSDoc (and this class's top-level JSDoc)
+  // promise it "never throws" — but the redact call used to be the one
+  // unprotected step in the pipeline, unlike every sink write. A throwing
+  // redact must not escape log(), and — since redact's entire purpose is
+  // stripping secrets/PII before a sink sees the event — must not fall
+  // back to delivering the unredacted event either; it should be reported
+  // and dropped.
+  it('does not throw when redact itself throws, and does not deliver the unredacted event to any sink', () => {
+    const onSinkError = vi.fn();
+    const sink = new InMemoryAuditSink();
+    const boom = new Error('redact blew up');
+    const logger = new AuditLogger({
+      sinks: [sink],
+      onSinkError,
+      redact: () => {
+        throw boom;
+      },
+    });
+
+    expect(() => {
+      logger.log({
+        action: 'auth.login.succeeded',
+        outcome: 'success',
+        metadata: { password: 'hunter2' },
+      });
+    }).not.toThrow();
+
+    expect(sink.events).toHaveLength(0);
+    expect(onSinkError).toHaveBeenCalledTimes(1);
+    const [error] = onSinkError.mock.calls[0] as [AuditSinkError];
+    expect(error).toBeInstanceOf(AuditSinkError);
+    expect(error.sinkName).toBe('redact');
+    expect(error.cause).toBe(boom);
+  });
+
+  it('does not throw out of log() even if onSinkError itself throws in response to a redact failure', () => {
+    const logger = new AuditLogger({
+      sinks: [new InMemoryAuditSink()],
+      onSinkError: () => {
+        throw new Error('onSinkError blew up too');
+      },
+      redact: () => {
+        throw new Error('redact blew up');
+      },
+    });
+
+    expect(() => {
+      logger.log({ action: 'auth.login.succeeded', outcome: 'success' });
+    }).not.toThrow();
+  });
+
   it('writes the same event to every configured sink', () => {
     const sinkA = new InMemoryAuditSink();
     const sinkB = new InMemoryAuditSink();

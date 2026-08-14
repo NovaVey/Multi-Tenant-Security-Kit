@@ -110,6 +110,34 @@ describe('requirePermission', () => {
     );
   });
 
+  // Regression: a getSubject that resolves to a subject with a malformed
+  // (non-array) roles field used to reach RbacPolicy.assert()'s error-message
+  // construction (`subject.roles.join(...)`), which threw a raw TypeError.
+  // That TypeError isn't `instanceof ForbiddenError`, so it skipped
+  // onDenied entirely and went to next(err) instead — silently breaking
+  // any app relying on onDenied for audit-logging denied requests. It must
+  // now be a normal, onDenied-routed denial, same as any other.
+  it('treats a resolved subject with a malformed (non-array) roles field as a denial via onDenied, not next(err)', async () => {
+    const onDenied = vi.fn();
+    const middleware = requirePermission({
+      policy,
+      permission: 'invoices:read',
+      getSubject: () => ({ tenantId: 't1', roles: 'viewer' }) as unknown as AccessSubject,
+      onDenied,
+    });
+    const req = mockReq();
+    const res = mockRes();
+    const next = vi.fn();
+
+    middleware(req, res, next);
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    expect(next).not.toHaveBeenCalled();
+    expect(onDenied).toHaveBeenCalledTimes(1);
+    const [, , , error] = onDenied.mock.calls[0] as [unknown, unknown, unknown, ForbiddenError];
+    expect(error).toBeInstanceOf(ForbiddenError);
+  });
+
   it('invokes a custom onDenied handler instead of the default response', async () => {
     const onDenied = vi.fn((_req, res: MinimalResponse, _next, error: ForbiddenError) => {
       res.status(451).json({ custom: true, permission: error.permission });

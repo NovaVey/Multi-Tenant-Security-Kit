@@ -124,9 +124,14 @@ const getSubject: SubjectResolver<Request & { user: { id: string } }> = async (r
 };
 ```
 
-A `getSubject` that resolves to `undefined` (or throws) is treated as a
-denial, not a crash — `requirePermission` calls `onDenied` the same way it
-would for a real permission failure.
+A `getSubject` that resolves to `undefined` is treated as a denial —
+`requirePermission` calls `onDenied` the same way it would for a real
+permission failure. A `getSubject` that _throws_ is different: that's
+forwarded to `next(err)` instead, not `onDenied`, since collapsing a real
+error (a downstream auth service being unreachable, say) into an ordinary
+403 would hide an outage behind what looks like a routine denial. Catch
+your own errors inside `getSubject` and resolve to `undefined` if you want
+them treated as a denial instead.
 
 ### Customizing the denial response
 

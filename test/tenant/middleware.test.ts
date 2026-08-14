@@ -115,7 +115,12 @@ describe('createTenantMiddleware', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('rejects tenant ids that fail validation', async () => {
+  it('rejects tenant ids that fail validation via onMissing (not a thrown error), and does not leak the raw value', async () => {
+    // Regression: this used to throw InvalidTenantIdError instead of
+    // calling onMissing, contradicting this option's own documented
+    // behavior ("called when no tenant could be resolved, or it failed
+    // validation") and echoing the raw resolved value into the thrown
+    // error's message via JSON.stringify.
     const middleware = createTenantMiddleware({ resolver: headerTenantResolver() });
     const req = mockReq({ headers: { 'x-tenant-id': 'not valid! id' } });
     const res = mockRes();
@@ -124,11 +129,13 @@ describe('createTenantMiddleware', () => {
     middleware(req, res, next);
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
 
-    expect(next).toHaveBeenCalledTimes(1);
-    expect(next.mock.calls[0]?.[0]).toBeInstanceOf(Error);
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: 'invalid_tenant' }));
+    expect(JSON.stringify(res.body)).not.toContain('not valid! id');
   });
 
-  it('supports a custom onMissing handler', async () => {
+  it('supports a custom onMissing handler for the "no tenant resolved" case', async () => {
     const onMissing = vi.fn((_req, res: MinimalResponse) => {
       res.status(200).json({ ok: true });
     });
@@ -139,7 +146,25 @@ describe('createTenantMiddleware', () => {
     middleware(req, res, vi.fn());
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
 
-    expect(onMissing).toHaveBeenCalled();
+    expect(onMissing).toHaveBeenCalledWith(req, res, expect.any(Function), { reason: 'missing' });
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it('calls the custom onMissing handler for the "resolved but invalid" case too, with the rejected tenantId', async () => {
+    const onMissing = vi.fn((_req, res: MinimalResponse) => {
+      res.status(200).json({ ok: true });
+    });
+    const middleware = createTenantMiddleware({ resolver: headerTenantResolver(), onMissing });
+    const req = mockReq({ headers: { 'x-tenant-id': 'not valid! id' } });
+    const res = mockRes();
+
+    middleware(req, res, vi.fn());
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    expect(onMissing).toHaveBeenCalledWith(req, res, expect.any(Function), {
+      reason: 'invalid',
+      tenantId: 'not valid! id',
+    });
     expect(res.status).toHaveBeenCalledWith(200);
   });
 });

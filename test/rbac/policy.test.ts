@@ -209,6 +209,42 @@ describe('RbacPolicy.can', () => {
   it('denies when the subject only holds unknown roles', () => {
     expect(policy.can(subject(['ghost']), 'invoices:read')).toBe(false);
   });
+
+  // Regression coverage: subject.roles is typed as Role[], but a caller can
+  // still hand this a malformed value at runtime (a decoded-token claim
+  // that turned out not to be an array, `roles: 'admin'` instead of
+  // `roles: ['admin']`, etc.). Before this was validated, a string value
+  // didn't throw here at all — strings are iterable, so it silently
+  // iterated character-by-character — which could coincidentally grant
+  // permissions from a single-character role name; other non-array values
+  // (null, a number, a plain object) threw a raw TypeError out of `can()`.
+  // Every one of these must now cleanly resolve to `false` instead.
+  describe('malformed subject.roles (not an array)', () => {
+    const malformed: unknown[] = ['viewer', null, undefined, 42, {}, { length: 1, 0: 'viewer' }];
+
+    for (const roles of malformed) {
+      it(`denies (does not throw) for roles = ${JSON.stringify(roles)}`, () => {
+        const malformedSubject = { tenantId: 'tenant-a', roles } as unknown as AccessSubject;
+        expect(() => policy.can(malformedSubject, 'invoices:read')).not.toThrow();
+        expect(policy.can(malformedSubject, 'invoices:read')).toBe(false);
+      });
+    }
+
+    it('a single-character role name string does not coincidentally grant anything', () => {
+      // Regression for the specific silent-wrong-ALLOW shape: if a role
+      // literally named "v" existed and roles were iterated
+      // character-by-character, subject.roles = 'viewer' would grant it.
+      const policyWithShortRole = new RbacPolicy([
+        { name: 'v', permissions: ['invoices:read'] },
+        { name: 'viewer', permissions: ['invoices:read'] },
+      ]);
+      const malformedSubject = {
+        tenantId: 'tenant-a',
+        roles: 'viewer',
+      } as unknown as AccessSubject;
+      expect(policyWithShortRole.can(malformedSubject, 'invoices:read')).toBe(false);
+    });
+  });
 });
 
 describe('RbacPolicy.assert', () => {
@@ -233,5 +269,19 @@ describe('RbacPolicy.assert', () => {
       expect(forbidden.message).toContain('invoices:delete');
       expect(forbidden.code).toBe('FORBIDDEN');
     }
+  });
+
+  // Regression: assert() used to build its error message with
+  // `subject.roles.join(', ')` unconditionally — for a non-array roles
+  // value (e.g. a string), `.join` doesn't exist and that threw a raw,
+  // unbranded TypeError instead of ForbiddenError, which
+  // `requirePermission`'s middleware doesn't recognize as a denial (it
+  // isn't `instanceof ForbiddenError`), silently skipping `onDenied`.
+  it('throws ForbiddenError, not a raw TypeError, when subject.roles is not an array', () => {
+    const malformedSubject = {
+      tenantId: 'tenant-a',
+      roles: 'viewer',
+    } as unknown as AccessSubject;
+    expect(() => policy.assert(malformedSubject, 'invoices:read')).toThrow(ForbiddenError);
   });
 });

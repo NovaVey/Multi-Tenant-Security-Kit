@@ -147,11 +147,23 @@ export class RbacPolicy {
    * bare superuser wildcard `"*"`, or via a namespaced wildcard grant
    * (e.g. granted `"invoices:*"` matches requested `"invoices:read"`).
    *
-   * This is a pure, side-effect-free query — prefer {@link assert} at
-   * enforcement points so a denial fails loudly instead of needing every
-   * call site to remember to check the boolean.
+   * This is a pure, side-effect-free query that never throws — prefer
+   * {@link assert} at enforcement points so a denial fails loudly instead
+   * of needing every call site to remember to check the boolean. A
+   * malformed `subject.roles` (not an array — e.g. a single role string
+   * passed where `roles: [role]` was meant, or a decoded-token claim that
+   * turned out not to be an array) is treated as holding no roles at all
+   * and always resolves to `false`, the same safe-by-default outcome as
+   * a subject that legitimately lacks the permission. Without this check,
+   * `Array.isArray` is skipped and `roles` is iterated as given — a
+   * *string* `roles` value doesn't throw here (strings are iterable, so
+   * it silently iterates character-by-character instead), which is worse
+   * than throwing: it can coincidentally grant permissions from a
+   * single-character role name.
    */
   can(subject: AccessSubject, permission: Permission): boolean {
+    if (!Array.isArray(subject.roles)) return false;
+
     const granted = this.permissionsFor(subject.roles);
     if (granted.has(permission)) return true;
 
@@ -173,12 +185,19 @@ export class RbacPolicy {
    * boolean so authorization failures can't be accidentally ignored by a
    * caller that forgets to check a return value.
    *
+   * Always throws {@link ForbiddenError} on denial — including when
+   * `subject.roles` isn't an array (see {@link can}) — never a raw,
+   * unbranded error, so callers (e.g. `requirePermission`'s middleware)
+   * can reliably distinguish "denied" from "something else went wrong"
+   * with a plain `instanceof` check.
+   *
    * @throws {ForbiddenError} naming the missing permission, if {@link can} is false.
    */
   assert(subject: AccessSubject, permission: Permission): void {
     if (!this.can(subject, permission)) {
+      const roles = Array.isArray(subject.roles) ? subject.roles.join(', ') : String(subject.roles);
       throw new ForbiddenError(
-        `Subject with roles [${subject.roles.join(', ')}] lacks required permission "${permission}".`,
+        `Subject with roles [${roles}] lacks required permission "${permission}".`,
         permission,
       );
     }
