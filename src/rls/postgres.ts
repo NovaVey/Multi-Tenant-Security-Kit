@@ -122,10 +122,21 @@ export function generateEnableRlsSql(table: string): string {
  * rows whose tenant column matches the tenant id currently set on
  * `options.sessionSetting` (via {@link generateSetTenantContextSql}).
  *
- * Both `USING` (which rows are visible/updatable/deletable) and
- * `WITH CHECK` (which rows may be inserted or the post-update result of a
- * row) are set to the same predicate, so the policy can't be used to read
- * one tenant's rows while writing as another.
+ * `USING` (which rows are visible/updatable/deletable) and `WITH CHECK`
+ * (which rows may be inserted, or the post-update result of a row) are set
+ * to the same predicate, so the policy can't be used to read one tenant's
+ * rows while writing as another — but Postgres only *accepts* each clause
+ * for certain `command` values (`CREATE POLICY ... FOR SELECT ... WITH
+ * CHECK ...` is a syntax error, not a no-op), so which clauses actually get
+ * emitted depends on `options.command`:
+ *
+ * | `command`         | `USING` | `WITH CHECK` |
+ * | ------------------ | ------- | ------------ |
+ * | `ALL` (default)     | yes     | yes          |
+ * | `SELECT`            | yes     | —            |
+ * | `INSERT`            | —       | yes          |
+ * | `UPDATE`            | yes     | yes          |
+ * | `DELETE`            | yes     | —            |
  *
  * @throws {InvalidSqlIdentifierError} if `options.table`, `options.tenantColumn`,
  * `options.policyName`, or `options.sessionSetting` is not a valid SQL
@@ -158,11 +169,24 @@ export function generateTenantIsolationPolicySql(options: RlsPolicyOptions): str
     lines.push(`  TO ${options.roles.map(quoteIdentifier).join(', ')}`);
   }
 
-  const predicate = `${quoteIdentifier(tenantColumn)} = current_setting('${sessionSetting}', true)`;
-  lines.push(`  USING (${predicate})`);
-  lines.push(`  WITH CHECK (${predicate});`);
+  // Postgres rejects USING on an INSERT-only policy and rejects WITH CHECK
+  // on a SELECT- or DELETE-only policy — these aren't independent flags,
+  // they follow directly from what each clause even means (USING gates
+  // which existing rows a statement can see/touch; WITH CHECK gates what a
+  // newly-inserted or post-update row is allowed to look like).
+  const supportsUsing =
+    command === 'ALL' || command === 'SELECT' || command === 'UPDATE' || command === 'DELETE';
+  const supportsWithCheck = command === 'ALL' || command === 'INSERT' || command === 'UPDATE';
 
-  return lines.join('\n');
+  const predicate = `${quoteIdentifier(tenantColumn)} = current_setting('${sessionSetting}', true)`;
+  if (supportsUsing) {
+    lines.push(`  USING (${predicate})`);
+  }
+  if (supportsWithCheck) {
+    lines.push(`  WITH CHECK (${predicate})`);
+  }
+
+  return `${lines.join('\n')};`;
 }
 
 /**

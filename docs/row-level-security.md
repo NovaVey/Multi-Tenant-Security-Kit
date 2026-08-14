@@ -57,9 +57,19 @@ footgun: without it, the table owner — often the same role a migration or
 admin job connects as — silently bypasses every policy on the table.
 `generateEnableRlsSql` always emits both statements together.
 
-Both `USING` (read/update/delete visibility) and `WITH CHECK` (insert / the
+`USING` (read/update/delete visibility) and `WITH CHECK` (insert / the
 post-update row) use the same predicate, so the policy can't be used to read
-one tenant's rows while writing as another.
+one tenant's rows while writing as another — but Postgres only _accepts_
+each clause for certain `command` values (it's a syntax error otherwise),
+so which ones actually get emitted depends on `command`:
+
+| `command`       | `USING` | `WITH CHECK` |
+| --------------- | ------- | ------------ |
+| `ALL` (default) | yes     | yes          |
+| `SELECT`        | yes     | —            |
+| `INSERT`        | —       | yes          |
+| `UPDATE`        | yes     | yes          |
+| `DELETE`        | yes     | —            |
 
 ### Customizing the policy
 

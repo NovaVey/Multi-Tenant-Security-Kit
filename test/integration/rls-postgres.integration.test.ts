@@ -147,3 +147,129 @@ describe('RLS SQL enforces real tenant isolation in Postgres', () => {
     expect(result.rows.map((row: { note: string }) => row.note)).toEqual(['acme-1', 'acme-2']);
   });
 });
+
+/**
+ * Regression coverage for a real bug: `generateTenantIsolationPolicySql`
+ * used to emit `USING` and `WITH CHECK` unconditionally regardless of
+ * `command`, but Postgres rejects `WITH CHECK` on a SELECT/DELETE-only
+ * policy and rejects `USING` on an INSERT-only policy — so the SQL this
+ * module generated for anything other than `ALL`/`UPDATE` failed outright
+ * against a real database. Executing all three `CREATE POLICY` statements
+ * below without throwing *is* the regression test; the enforcement
+ * assertions after that prove the narrowed policies still work correctly.
+ */
+describe('per-command (SELECT/INSERT/DELETE-only) policies execute against real Postgres', () => {
+  let container: StartedPostgreSqlContainer;
+  let adminClient: Client;
+  let appClient: Client;
+
+  beforeAll(async () => {
+    container = await new PostgreSqlContainer('postgres:16-alpine').start();
+
+    adminClient = new Client({ connectionString: container.getConnectionUri() });
+    await adminClient.connect();
+
+    await adminClient.query(`CREATE ROLE app_role LOGIN PASSWORD 'app_role_password'`);
+
+    await adminClient.query(`
+      CREATE TABLE command_scoped (
+        id serial PRIMARY KEY,
+        tenant_id text NOT NULL,
+        note text
+      );
+    `);
+    await adminClient.query(`ALTER TABLE command_scoped OWNER TO app_role`);
+    await adminClient.query(generateEnableRlsSql('command_scoped'));
+
+    // Each command gets its own policy (distinct policyName — Postgres
+    // policy names must be unique per table) so each one is scoped to
+    // exactly the command Postgres will only accept USING/WITH CHECK for.
+    await adminClient.query(
+      generateTenantIsolationPolicySql({
+        table: 'command_scoped',
+        command: 'SELECT',
+        policyName: 'command_scoped_select',
+      }),
+    );
+    await adminClient.query(
+      generateTenantIsolationPolicySql({
+        table: 'command_scoped',
+        command: 'INSERT',
+        policyName: 'command_scoped_insert',
+      }),
+    );
+    await adminClient.query(
+      generateTenantIsolationPolicySql({
+        table: 'command_scoped',
+        command: 'DELETE',
+        policyName: 'command_scoped_delete',
+      }),
+    );
+
+    await adminClient.query(
+      `INSERT INTO command_scoped (tenant_id, note) VALUES ('acme', 'acme-a'), ('acme', 'acme-b'), ('globex', 'globex-a')`,
+    );
+
+    appClient = new Client({
+      host: container.getHost(),
+      port: container.getPort(),
+      database: container.getDatabase(),
+      user: 'app_role',
+      password: 'app_role_password',
+    });
+    await appClient.connect();
+  }, 120_000);
+
+  afterAll(async () => {
+    await appClient?.end();
+    await adminClient?.end();
+    await container?.stop();
+  });
+
+  beforeEach(async () => {
+    await appClient.query('BEGIN');
+  });
+
+  afterEach(async () => {
+    await appClient.query('ROLLBACK');
+  });
+
+  it('SELECT-only policy: a tenant only sees its own rows', async () => {
+    await appClient.query(generateSetTenantContextSql(), ['acme']);
+    const result = await appClient.query(
+      'SELECT tenant_id, note FROM command_scoped ORDER BY note',
+    );
+    expect(result.rows).toEqual([
+      { tenant_id: 'acme', note: 'acme-a' },
+      { tenant_id: 'acme', note: 'acme-b' },
+    ]);
+  });
+
+  it('INSERT-only policy: allows inserting a row for your own tenant', async () => {
+    await appClient.query(generateSetTenantContextSql(), ['acme']);
+    await expect(
+      appClient.query(
+        `INSERT INTO command_scoped (tenant_id, note) VALUES ('acme', 'new-acme-row')`,
+      ),
+    ).resolves.toBeDefined();
+  });
+
+  it('INSERT-only policy: rejects inserting a row for a different tenant', async () => {
+    await appClient.query(generateSetTenantContextSql(), ['acme']);
+    await expect(
+      appClient.query(`INSERT INTO command_scoped (tenant_id, note) VALUES ('globex', 'sneaky')`),
+    ).rejects.toThrow(/row-level security/i);
+  });
+
+  it('DELETE-only policy: only deletes rows belonging to the active tenant, even with no WHERE clause', async () => {
+    await appClient.query(generateSetTenantContextSql(), ['acme']);
+    const result = await appClient.query(`DELETE FROM command_scoped`);
+    // Only acme's 2 rows were ever visible to the DELETE's USING clause.
+    expect(result.rowCount).toBe(2);
+
+    const check = await adminClient.query(
+      `SELECT note FROM command_scoped WHERE tenant_id = 'globex'`,
+    );
+    expect(check.rows[0]?.note).toBe('globex-a'); // untouched
+  });
+});
