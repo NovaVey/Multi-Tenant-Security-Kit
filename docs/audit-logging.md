@@ -130,17 +130,73 @@ req.auditLog.log({ action: 'invoices.exported', outcome: 'success' });
 An explicit field on a given `log()` call always wins over the child's
 defaults, and `child()` can itself be chained.
 
+## OpenTelemetry integration
+
+This package has zero runtime dependencies, so it never imports
+`@opentelemetry/api` itself — `openTelemetrySink` and `traceContextTransform`
+instead accept a `getActiveSpan` callback you provide (typically
+`() => trace.getActiveSpan()`), typed against a small structural interface
+(`OtelSpanLike`) that a real OpenTelemetry `Span` satisfies with no adapter
+or cast needed:
+
+```ts
+import { trace } from '@opentelemetry/api';
+import {
+  AuditLogger,
+  ConsoleAuditSink,
+  openTelemetrySink,
+  traceContextTransform,
+} from '@novavey/multi-tenant-security-kit/audit';
+
+const getActiveSpan = () => trace.getActiveSpan();
+
+const auditLog = new AuditLogger({
+  sinks: [
+    new ConsoleAuditSink(),
+    openTelemetrySink({ getActiveSpan }), // records each event as a span event
+  ],
+  redact: traceContextTransform({ getActiveSpan }), // stamps traceId/spanId onto every sink's event
+});
+```
+
+**`openTelemetrySink({ getActiveSpan })`** — an `AuditSink` that calls
+`span.addEvent(action, attributes)` on the currently active span for every
+audit event, and marks the span's status as an error for any outcome other
+than `'success'`. A no-op (not an error) when there's no active span. Only
+`metadata` values that are `string | number | boolean` become span
+attributes — OpenTelemetry attributes can't hold arbitrary objects; richer
+metadata is silently dropped from the span event only, every other
+configured sink still receives it in full.
+
+**`traceContextTransform({ getActiveSpan })`** — builds a function
+compatible with `AuditLoggerOptions.redact` that stamps `traceId`/`spanId`
+from the active span onto every event's `metadata`, so sinks with no
+OpenTelemetry awareness at all (a plain JSON log, a webhook, a database
+row) can still be correlated back to the trace that produced them. Compose
+with your own redaction if you need both:
+`redact: (event) => myRedact(traceContextTransform({ getActiveSpan })(event))`.
+
+Both are plain functions returning a sink/transform — nothing about them is
+OpenTelemetry-SDK-specific beyond the shape of the object `getActiveSpan`
+returns, so a test double or any other tracer satisfying `OtelSpanLike` (see
+the API reference below) works too, no `@opentelemetry/api` install
+required just to use this module.
+
 ## API reference
 
-| Export                  | Kind      | Summary                                                                        |
-| ----------------------- | --------- | ------------------------------------------------------------------------------ |
-| `AuditOutcome`          | type      | `'success' \| 'failure' \| 'denied'`                                           |
-| `AuditEvent`            | type      | `{ action, tenantId?, actorId?, targetId?, outcome, metadata?, timestamp }`    |
-| `AuditEventInput`       | type      | What you pass to `log()` — `AuditEvent` minus `timestamp`, optional `tenantId` |
-| `AuditSink`             | interface | `write(event): void \| Promise<void>`                                          |
-| `AuditAction`           | const     | Recommended action-name constants (not a closed set)                           |
-| `ConsoleAuditSink`      | class     | Writes one JSON line per event via `console.log`                               |
-| `InMemoryAuditSink`     | class     | Accumulates events; `.events`, `.clear()` — tests/debugging only               |
-| `callbackAuditSink(fn)` | function  | Wraps an arbitrary function as a sink                                          |
-| `AuditLoggerOptions`    | type      | `{ sinks, onSinkError?, redact? }`                                             |
-| `AuditLogger`           | class     | `new AuditLogger(options)`; `.log(event)`; `.child(defaults)`                  |
+| Export                           | Kind      | Summary                                                                        |
+| -------------------------------- | --------- | ------------------------------------------------------------------------------ |
+| `AuditOutcome`                   | type      | `'success' \| 'failure' \| 'denied'`                                           |
+| `AuditEvent`                     | type      | `{ action, tenantId?, actorId?, targetId?, outcome, metadata?, timestamp }`    |
+| `AuditEventInput`                | type      | What you pass to `log()` — `AuditEvent` minus `timestamp`, optional `tenantId` |
+| `AuditSink`                      | interface | `write(event): void \| Promise<void>`                                          |
+| `AuditAction`                    | const     | Recommended action-name constants (not a closed set)                           |
+| `ConsoleAuditSink`               | class     | Writes one JSON line per event via `console.log`                               |
+| `InMemoryAuditSink`              | class     | Accumulates events; `.events`, `.clear()` — tests/debugging only               |
+| `callbackAuditSink(fn)`          | function  | Wraps an arbitrary function as a sink                                          |
+| `AuditLoggerOptions`             | type      | `{ sinks, onSinkError?, redact? }`                                             |
+| `AuditLogger`                    | class     | `new AuditLogger(options)`; `.log(event)`; `.child(defaults)`                  |
+| `OtelSpanLike`                   | type      | Structural subset of `@opentelemetry/api`'s `Span` this module needs           |
+| `OtelHookOptions`                | type      | `{ getActiveSpan: () => OtelSpanLike \| undefined }`                           |
+| `openTelemetrySink(options)`     | function  | `AuditSink` recording events as span events on the active span                 |
+| `traceContextTransform(options)` | function  | `redact`-compatible transform stamping `traceId`/`spanId` onto `metadata`      |

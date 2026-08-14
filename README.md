@@ -168,7 +168,7 @@ dependency, peer or otherwise.
 - [Tenant isolation](./docs/tenant-isolation.md) — context propagation, resolvers, guards
 - [RBAC](./docs/rbac.md) — policies, inheritance, wildcards, middleware
 - [Rate limiting](./docs/rate-limiting.md) — token bucket, custom stores, headers
-- [Audit logging](./docs/audit-logging.md) — sinks, redaction, child loggers
+- [Audit logging](./docs/audit-logging.md) — sinks, redaction, child loggers, OpenTelemetry integration
 - [Row-level security](./docs/row-level-security.md) — Postgres RLS SQL generation, Prisma/Drizzle integration
 - [Encryption](./docs/encryption.md) — per-tenant AES-256-GCM, key providers
 - [Auth provider integrations](./docs/auth-integrations.md) — Auth.js, Clerk, Auth0
