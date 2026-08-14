@@ -6,6 +6,39 @@ follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-08-14
+
+### Fixed
+
+- `rls`'s identifier validation (`generateEnableRlsSql`,
+  `generateTenantIsolationPolicySql`, `generateSetTenantContextSql`,
+  `tenantWhereClause`, `generateTenantIsolationMigration`) now throws
+  `InvalidSqlIdentifierError` (`code: 'INVALID_SQL_IDENTIFIER'`) instead of
+  a plain `TypeError`. Every other module's errors already extended the
+  shared `SecurityKitError` base with a stable `.code`; `rls` was the one
+  outlier, breaking the "every error this kit throws has a stable `.code`"
+  promise `src/errors.ts`'s own doc comment already made. Found and fixed
+  while reviewing the public API surface ahead of `1.0.0` — see
+  `docs/versioning-policy.md`, new in this release.
+- `SecurityKitError` (the shared base class) is now re-exported from every
+  subpath barrel (`/tenant`, `/rbac`, `/rate-limit`, `/audit`, `/rls`,
+  `/crypto`), not just the package root, matching how each module already
+  re-exports its own specific error classes. A consumer importing only one
+  subpath can now `catch (e) { if (e instanceof SecurityKitError) ... }`
+  without an extra root import.
+
+### Added
+
+- `docs/versioning-policy.md` — spells out exactly what SemVer means for
+  this package: what counts as the public API (precisely what's reachable
+  through `package.json`'s `exports` map — internal-but-technically-exported
+  values like `IDENTIFIER_PATTERN`/`DEFAULT_TENANT_ID_PATTERN` don't count),
+  what triggers a `patch`/`minor`/`major` bump, that `error.code` strings
+  become stable once `1.0.0` ships, that raising the minimum supported
+  Node.js version is a `minor` bump not `major`, and the
+  deprecate-one-cycle-before-removing policy. Linked from `README.md` and
+  `CONTRIBUTING.md`.
+
 ## [0.2.0] - 2026-08-14
 
 ### Added
@@ -225,7 +258,9 @@ AuditSinkError) => ...`, as shown in docs/audit-logging.md, previously
   manual branch-protection setup checklist
   (`docs/github-governance.md`).
 
-[Unreleased]: https://github.com/NovaVey/multi-tenant-security-kit/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/NovaVey/multi-tenant-security-kit/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/NovaVey/multi-tenant-security-kit/releases/tag/v0.2.1
+[0.2.0]: https://github.com/NovaVey/multi-tenant-security-kit/releases/tag/v0.2.0
 [0.1.2]: https://github.com/NovaVey/multi-tenant-security-kit/releases/tag/v0.1.2
 [0.1.1]: https://github.com/NovaVey/multi-tenant-security-kit/releases/tag/v0.1.1
 [0.1.0]: https://github.com/NovaVey/multi-tenant-security-kit/releases/tag/v0.1.0
