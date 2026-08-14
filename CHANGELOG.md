@@ -6,6 +6,91 @@ follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-08-14
+
+Fixes every issue found by a post-1.0 in-depth security audit — 17
+findings across `src/`, release infrastructure, and docs, shipped as 5
+phases (Critical → High → Medium → Docs, each merged and CI-verified
+before the next started; see PRs #25, #27, #28, #29, #30).
+
+### Fixed
+
+- **Critical:** `generateTenantIsolationPolicySql` emitted both `USING`
+  and `WITH CHECK` unconditionally regardless of `command`, but Postgres
+  only accepts `WITH CHECK` on `INSERT`/`UPDATE`/`ALL` policies and only
+  accepts `USING` on `SELECT`/`UPDATE`/`DELETE`/`ALL` — so `command:
+'SELECT' | 'INSERT' | 'DELETE'` (all documented values) produced a
+  `CREATE POLICY` statement that failed outright against a real database.
+  Verified against a live Postgres 16 container. No change for the `ALL`
+  default or `UPDATE`.
+- **`AuditLogger.log()`** could throw despite its documented "never
+  throws" guarantee — a throwing `redact` wasn't try/catch-protected like
+  sink writes. Now caught, reported via `onSinkError`, and the event is
+  dropped (not delivered unredacted) on failure.
+- **`RbacPolicy.can()`/`.assert()`** never validated `subject.roles` is
+  an array. A malformed `roles` either silently iterated a string
+  character-by-character or threw a raw, unbranded `TypeError` out of
+  `assert()` — not `instanceof ForbiddenError`, so `requirePermission`'s
+  middleware skipped `onDenied` entirely. Both now cleanly resolve to a
+  normal `ForbiddenError` denial.
+- **`createTenantMiddleware`'s `onMissing`** didn't fire for a
+  resolved-but-invalid tenant id, contradicting its own JSDoc/docs —
+  threw `InvalidTenantIdError` instead, echoing the raw value via
+  `JSON.stringify`. `onMissing` now fires for both cases via a new 4th
+  `info: TenantMissingInfo` argument; the default handler no longer
+  echoes the raw value.
+- **`tenantWhereClause`'s `paramIndex`** was spliced directly into the
+  returned SQL text with no validation — a non-integer value could
+  inject arbitrary SQL text into the placeholder position. Now throws
+  `InvalidSqlIdentifierError` unless `paramIndex` is a positive integer.
+- **`TenantRateLimiter.consume()`** never validated `points` — zero,
+  negative, `NaN`, or infinite values reached the store's arithmetic
+  unchecked and could unconditionally bypass the limit. Now throws the
+  new `InvalidRateLimitPointsError` before the store is ever called.
+- **`MemoryRateLimitStore`** grew unboundedly — being deliberately
+  timer-free, it never expired idle buckets, a real memory-exhaustion
+  vector if the key space is reachable by unauthenticated input. New
+  `maxBuckets` option (default `50_000`) bounds it via inline LRU
+  eviction; adds a `.size` getter.
+- **`package.json`'s `exports` map** broke TypeScript type resolution for
+  every subpath under `node10` and `node16`-from-CJS resolution (a shared
+  flat `types` key instead of per-condition `import`/`require` types, no
+  `typesVersions` fallback) — types-only, real JS consumers were
+  unaffected. Fixed and now permanently guarded by `npm run verify:types`
+  (`@arethetypeswrong/cli` against the real `npm pack` tarball), wired
+  into `npm run verify` and CI.
+- **`release.yml`'s publish-detection guard** referenced a nonexistent
+  `changesets/action` output twice in a row while chasing this down: an
+  incorrect kebab-case fix (verified against the action's unreleased
+  default-branch source) had to be reverted back to the correct camelCase
+  `hasChangesets` (verified against the actual deployed `@v1` tag). Also
+  hardened the npm-registry-propagation retry loop to fail the job
+  loudly instead of silently warning on exhaustion, and extended its
+  budget (~140s, up from a flat 30s).
+- Every third-party GitHub Action across all 5 workflow files is now
+  SHA-pinned instead of floating-tag-pinned (`changesets/action` and
+  `ossf/scorecard-action` are deliberate exceptions).
+
+### Documentation
+
+- Clarified (JSDoc + `docs/rbac.md`, no behavior change) that
+  `requirePermission`'s `getSubject` throwing is forwarded to `next(err)`,
+  not treated as a denial via `onDenied` — only a `getSubject` that
+  resolves to `undefined` is.
+- Documented that RLS `tenantColumn` must be `text`-typed (`CREATE
+POLICY` already failed loudly for `uuid`/`integer` columns; this was
+  previously undocumented).
+- Added the missing error-class rows (`SecurityKitError` + each module's
+  specific error class) to all 6 module docs' API reference tables.
+- Fixed `examples/express-basic.ts` so README.md's "audit logging on
+  every denial" claim is actually true: the POST route's cross-tenant
+  path and the rate-limit-denial path are now both audit-logged, matching
+  the GET route's existing pattern.
+- `SECURITY.md` no longer says "pre-1.0" — updated to describe the real
+  1.x support policy.
+- Fixed `docs/versioning-policy.md`'s cross-reference for where
+  `examples/`'s typecheck exclusion is actually documented.
+
 ## [1.0.0] - 2026-08-14
 
 First stable release. No breaking changes from `0.3.0` — this entry marks
@@ -321,7 +406,8 @@ AuditSinkError) => ...`, as shown in docs/audit-logging.md, previously
   manual branch-protection setup checklist
   (`docs/github-governance.md`).
 
-[Unreleased]: https://github.com/NovaVey/multi-tenant-security-kit/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/NovaVey/multi-tenant-security-kit/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/NovaVey/multi-tenant-security-kit/releases/tag/v1.1.0
 [1.0.0]: https://github.com/NovaVey/multi-tenant-security-kit/releases/tag/v1.0.0
 [0.3.0]: https://github.com/NovaVey/multi-tenant-security-kit/releases/tag/v0.3.0
 [0.2.1]: https://github.com/NovaVey/multi-tenant-security-kit/releases/tag/v0.2.1
