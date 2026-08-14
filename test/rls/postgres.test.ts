@@ -298,6 +298,26 @@ describe('tenantWhereClause', () => {
       expect(() => tenantWhereClause(bad)).toThrow(InvalidSqlIdentifierError);
     });
   }
+
+  // Regression: paramIndex was spliced directly into the returned SQL text
+  // (`$${paramIndex}`) with no validation at all — a non-integer value
+  // (e.g. a crafted string reaching this call through a loosely-typed
+  // integration) could inject arbitrary SQL text into the placeholder
+  // position, e.g. paramIndex = '5 OR 1=1 --' producing
+  // `"tenant_id" = $5 OR 1=1 --`.
+  for (const bad of [0, -1, -100, 1.5, NaN, Infinity, -Infinity, '5 OR 1=1 --']) {
+    it(`rejects invalid paramIndex ${JSON.stringify(bad)} with an InvalidSqlIdentifierError`, () => {
+      expect(() => tenantWhereClause('tenant_id', bad as unknown as number)).toThrow(
+        InvalidSqlIdentifierError,
+      );
+    });
+  }
+
+  it('the injection-shaped paramIndex is rejected before it ever reaches the returned SQL text', () => {
+    expect(() => tenantWhereClause('tenant_id', '5 OR 1=1 --' as unknown as number)).toThrow(
+      InvalidSqlIdentifierError,
+    );
+  });
 });
 
 describe('generateTenantIsolationMigration', () => {

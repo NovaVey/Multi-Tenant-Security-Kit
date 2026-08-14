@@ -84,6 +84,29 @@ generateTenantIsolationPolicySql({
 });
 ```
 
+### Non-text tenant columns
+
+`tenantColumn` **must be a `text`-compatible column** (`text`, `varchar`,
+`citext`, ...). The generated predicate compares it against
+`current_setting(...)`, which always returns `text` — Postgres has no
+implicit cast from `text` to `uuid`/`integer`/etc. for `=`, so
+`CREATE POLICY` fails outright with something like
+`operator does not exist: uuid = text` if your tenant column is one of
+those types. This is a loud failure at migration-authoring time, not a
+silent isolation gap — but it's easy to hit with a realistic schema (a
+`uuid` primary-key-style tenant id is common), so it's worth knowing
+about before you're debugging it live.
+
+If your tenant id is a `uuid` or `integer`, either:
+
+- Store it in a `text` column instead (or add `citext` if you also want
+  case-insensitive comparisons), or
+- Don't use `generateTenantIsolationPolicySql` for that table — write the
+  `CREATE POLICY` statement yourself with an explicit cast, e.g.
+  `USING ("tenant_id" = current_setting('app.current_tenant_id', true)::uuid)`,
+  applying the same identifier-validation discipline this module uses if
+  any part of that statement is ever built from a variable.
+
 ## Setting the tenant for a connection/transaction
 
 Run this once per request-scoped connection (typically at the start of a

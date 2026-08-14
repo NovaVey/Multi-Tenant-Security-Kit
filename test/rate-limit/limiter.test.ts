@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { InvalidRateLimitPointsError, SecurityKitError } from '../../src/errors.js';
 import { TenantRateLimiter } from '../../src/rate-limit/limiter.js';
 import { MemoryRateLimitStore } from '../../src/rate-limit/memory-store.js';
 import type { RateLimitResult, RateLimitStore } from '../../src/rate-limit/types.js';
@@ -69,6 +70,56 @@ describe('TenantRateLimiter', () => {
 
     await limiter.consume('acme', 2);
     expect(consume).toHaveBeenCalledWith('exports:acme', 2, 10, 1000);
+  });
+
+  // Regression: points was never validated — a zero, negative, NaN, or
+  // infinite value reached the store's arithmetic unchecked. Zero/negative
+  // unconditionally "succeeded" in MemoryRateLimitStore (tokens >=
+  // 0/negative is always true) regardless of the tenant's actual
+  // remaining budget — a real bypass, given the library's own "variable
+  // request cost" feature (points as a function of the request)
+  // explicitly invites deriving this value from request data a
+  // cost-function bug could get wrong.
+  describe('invalid points', () => {
+    for (const points of [0, -1, -100, NaN, Infinity, -Infinity]) {
+      it(`rejects points = ${points} with InvalidRateLimitPointsError, without ever calling the store`, async () => {
+        const consume = vi.fn(async (): Promise<RateLimitResult> => ({
+          allowed: true,
+          remaining: 9,
+          limit: 10,
+          resetMs: 0,
+        }));
+        const limiter = new TenantRateLimiter({
+          store: { consume },
+          limit: 10,
+          windowMs: 1000,
+        });
+
+        await expect(limiter.consume('acme', points)).rejects.toThrow(InvalidRateLimitPointsError);
+        // Validation must happen before the store is ever touched — an
+        // invalid value must not reach (and potentially confuse) a real
+        // store implementation's own accounting.
+        expect(consume).not.toHaveBeenCalled();
+      });
+    }
+
+    it('the thrown error is a SecurityKitError with a stable code and carries the offending value', async () => {
+      const limiter = new TenantRateLimiter({
+        store: new MemoryRateLimitStore(),
+        limit: 5,
+        windowMs: 1000,
+      });
+      try {
+        await limiter.consume('acme', -5);
+        expect.unreachable('consume should have rejected');
+      } catch (err) {
+        expect(err).toBeInstanceOf(InvalidRateLimitPointsError);
+        expect(err).toBeInstanceOf(SecurityKitError);
+        const error = err as InvalidRateLimitPointsError;
+        expect(error.code).toBe('INVALID_RATE_LIMIT_POINTS');
+        expect(error.points).toBe(-5);
+      }
+    });
   });
 
   it('delegates to a fully custom store implementation', async () => {

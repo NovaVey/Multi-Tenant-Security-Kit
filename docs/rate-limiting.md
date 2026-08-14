@@ -110,6 +110,27 @@ tests), but each process gets its own independent budget in a multi-instance
 deployment, which effectively multiplies every tenant's real limit by the
 instance count.
 
+Being timer-free also means `MemoryRateLimitStore` can't proactively expire
+idle buckets on a schedule — every distinct key it's ever seen stays in
+memory until evicted. If the key space is reachable by unauthenticated
+request input (e.g. a tenant resolver that trusts a client-supplied header
+with nothing validating it upstream), that's an unbounded-memory-growth
+vector. `maxBuckets` (default `50_000`) bounds it: once exceeded, the
+least-recently-used bucket is evicted inline on the next `consume()` call
+for a new key — an evicted key's next request just starts a fresh,
+fully-stocked bucket, never a wider grant than a never-before-seen key
+would get.
+
+```ts
+const store = new MemoryRateLimitStore({ maxBuckets: 100_000 });
+```
+
+Raise it if you genuinely expect more concurrent distinct tenants than
+that; a real, unauthenticated-reachable deployment should still pair this
+with an actual upstream authentication/allowlist layer — bounding memory
+doesn't stop an attacker from thrashing legitimate tenants' buckets out of
+the cache by flooding fake keys, it only caps how much memory that costs.
+
 For multi-instance deployments, implement the small `RateLimitStore`
 interface against a shared backend (Redis is the natural choice) and pass it
 to `TenantRateLimiter`:
@@ -154,8 +175,10 @@ interface is a small, explicit choice you make, not something bundled in.
 | `RateLimitResult`                    | type      | `{ allowed, remaining, limit, resetMs }`                                      |
 | `RateLimitStore`                     | interface | `consume(key, points, limit, windowMs)`; optional `reset(key)`                |
 | `MemoryRateLimitStore`               | class     | Default in-memory, process-local store                                        |
+| `MemoryRateLimitStoreOptions`        | type      | `{ maxBuckets? }` — LRU-eviction cap, default `50_000`                        |
 | `TenantRateLimiterOptions`           | type      | `{ store?, limit, windowMs, keyPrefix? }`                                     |
 | `TenantRateLimiter`                  | class     | `new TenantRateLimiter(options)`; `.consume(tenantId, points?)`               |
 | `RateLimitMiddlewareOptions<Req>`    | type      | Options for `createRateLimitMiddleware`                                       |
 | `createRateLimitMiddleware(options)` | function  | Builds the enforcement middleware                                             |
 | `assertNotRateLimited(result)`       | function  | Throws `RateLimitExceededError` if `!result.allowed`, for non-HTTP call sites |
+| `InvalidRateLimitPointsError`        | class     | Thrown by `.consume()` if `points` isn't a positive, finite number            |

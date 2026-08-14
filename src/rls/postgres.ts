@@ -237,13 +237,25 @@ export interface TenantWhereClauseResult {
  * number. Callers bind the actual tenant id as the `paramIndex`-th
  * parameter of their query.
  *
- * @throws {InvalidSqlIdentifierError} if `tenantColumn` is not a valid SQL identifier.
+ * @throws {InvalidSqlIdentifierError} if `tenantColumn` is not a valid SQL
+ * identifier, or if `paramIndex` is not a positive integer — `paramIndex`
+ * is spliced directly into the returned SQL text (as `$<paramIndex>`), so
+ * a non-integer or attacker-shaped value (e.g. a string smuggled through a
+ * loosely-typed call site) is exactly as unsafe to leave unvalidated as
+ * any other value this module interpolates.
  */
 export function tenantWhereClause(
   tenantColumn = 'tenant_id',
   paramIndex = 1,
 ): TenantWhereClauseResult {
   assertValidIdentifier(tenantColumn, 'tenantColumn');
+  if (!Number.isInteger(paramIndex) || paramIndex < 1) {
+    throw new InvalidSqlIdentifierError(
+      paramIndex,
+      'paramIndex',
+      `Invalid paramIndex for tenantWhereClause: ${JSON.stringify(paramIndex)}. Must be a positive integer.`,
+    );
+  }
   return {
     clause: `${quoteIdentifier(tenantColumn)} = $${paramIndex}`,
     nextParamIndex: paramIndex + 1,

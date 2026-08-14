@@ -13,6 +13,18 @@ export interface RlsPolicyOptions {
   table: string;
   /**
    * The column on `table` that holds the owning tenant's id.
+   *
+   * **Must be a `text`-compatible column type** (`text`, `varchar`, `citext`,
+   * ...). The generated policy compares this column against
+   * `current_setting(...)`, which always returns `text` — Postgres has no
+   * implicit cast from `text` to `uuid`/`integer`/etc. for `=`, so
+   * `CREATE POLICY` itself fails outright (loudly, at migration time — not
+   * a silent isolation gap) for a non-text-typed column. If your tenant id
+   * is naturally a `uuid` or `integer`, either store it in a `text`
+   * column, or add an explicit cast in your own SQL rather than relying on
+   * this module's generated predicate (see "Non-text tenant columns" in
+   * `docs/row-level-security.md`).
+   *
    * @defaultValue `'tenant_id'`
    */
   tenantColumn?: string;
