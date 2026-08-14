@@ -2,16 +2,18 @@
 
 ## Supported Versions
 
-This package is pre-1.0. Only the latest published minor version receives
-security fixes.
+This package reached `1.0.0` — see [`docs/versioning-policy.md`](./docs/versioning-policy.md)
+for what that commits to. Only the latest published minor version of the
+current major receives security fixes.
 
 | Version            | Supported          |
 | ------------------ | ------------------ |
-| 0.x (latest minor) | :white_check_mark: |
-| < latest minor     | :x:                |
+| 1.x (latest minor) | :white_check_mark: |
+| 1.x (older minor)  | :x:                |
+| < 1.0              | :x:                |
 
-Once the package reaches 1.0, this table will be updated with a longer-lived
-support policy.
+If/when a `2.0.0` ships, this table (and whether the final `1.x` minor gets
+a bounded backport window) will be updated at that time.
 
 ## Reporting a Vulnerability
 

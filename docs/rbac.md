@@ -150,16 +150,19 @@ Default `onDenied` responds `403 { error: 'forbidden', message, permission }`.
 
 ## API reference
 
-| Export                                    | Kind     | Summary                                                              |
-| ----------------------------------------- | -------- | -------------------------------------------------------------------- |
-| `Role`, `Permission`                      | type     | Both plain `string` aliases                                          |
-| `RoleDefinition`                          | type     | `{ name, permissions, inherits? }`                                   |
-| `AccessSubject`                           | type     | `{ tenantId: string; roles: Role[] }`                                |
-| `RbacPolicy`                              | class    | `new RbacPolicy(roleDefinitions)`; throws `RbacConfigurationError`   |
-| `RbacPolicy#permissionsFor(roles)`        | method   | Resolved permission set (own + inherited) for a set of roles         |
-| `RbacPolicy#can(subject, permission)`     | method   | Boolean permission check                                             |
-| `RbacPolicy#assert(subject, permission)`  | method   | Throws `ForbiddenError` if denied                                    |
-| `SubjectResolver<Req>`                    | type     | `(req) => AccessSubject \| undefined \| Promise<...>`                |
-| `RequirePermissionOptions<Req>`           | type     | Options for `requirePermission`                                      |
-| `requirePermission(options)`              | function | Builds the enforcement middleware                                    |
-| `subjectFromRequestRoles(rolesProperty?)` | function | Ready-made `SubjectResolver` reading `req.roles` + the active tenant |
+| Export                                    | Kind     | Summary                                                                                                |
+| ----------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------ |
+| `Role`, `Permission`                      | type     | Both plain `string` aliases                                                                            |
+| `RoleDefinition`                          | type     | `{ name, permissions, inherits? }`                                                                     |
+| `AccessSubject`                           | type     | `{ tenantId: string; roles: Role[] }`                                                                  |
+| `RbacPolicy`                              | class    | `new RbacPolicy(roleDefinitions)`; throws `RbacConfigurationError`                                     |
+| `RbacPolicy#permissionsFor(roles)`        | method   | Resolved permission set (own + inherited) for a set of roles                                           |
+| `RbacPolicy#can(subject, permission)`     | method   | Boolean permission check                                                                               |
+| `RbacPolicy#assert(subject, permission)`  | method   | Throws `ForbiddenError` if denied                                                                      |
+| `SubjectResolver<Req>`                    | type     | `(req) => AccessSubject \| undefined \| Promise<...>`                                                  |
+| `RequirePermissionOptions<Req>`           | type     | Options for `requirePermission`                                                                        |
+| `requirePermission(options)`              | function | Builds the enforcement middleware                                                                      |
+| `subjectFromRequestRoles(rolesProperty?)` | function | Ready-made `SubjectResolver` reading `req.roles` + the active tenant                                   |
+| `SecurityKitError`                        | class    | Base class every error in this package extends; carries a stable `.code`                               |
+| `ForbiddenError`                          | class    | Thrown by `RbacPolicy#assert()`, denied via `onDenied`; `code: 'FORBIDDEN'`, carries `.permission`     |
+| `RbacConfigurationError`                  | class    | Thrown by the `RbacPolicy` constructor for an invalid role graph; `code: 'RBAC_CONFIGURATION_INVALID'` |

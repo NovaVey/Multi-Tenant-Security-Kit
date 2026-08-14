@@ -89,11 +89,13 @@ timing side channel.
 
 ## API reference
 
-| Export                   | Kind      | Summary                                                                    |
-| ------------------------ | --------- | -------------------------------------------------------------------------- |
-| `KeyProvider`            | interface | `getDataKey(tenantId): Buffer \| Promise<Buffer>` — the extension point    |
-| `EncryptedPayload`       | type      | `{ ciphertext, iv, authTag, keyId? }` (all base64)                         |
-| `EnvKeyProvider`         | class     | HKDF-derives a per-tenant key from one master secret                       |
-| `StaticKeyProvider`      | class     | Fixed `tenantId -> key` map — tests/fixtures                               |
-| `TenantEncryptorOptions` | type      | `{ keyProvider: KeyProvider }`                                             |
-| `TenantEncryptor`        | class     | `.encrypt(tenantId, plaintext, aad?)`, `.decrypt(tenantId, payload, aad?)` |
+| Export                   | Kind      | Summary                                                                                       |
+| ------------------------ | --------- | --------------------------------------------------------------------------------------------- |
+| `KeyProvider`            | interface | `getDataKey(tenantId): Buffer \| Promise<Buffer>` — the extension point                       |
+| `EncryptedPayload`       | type      | `{ ciphertext, iv, authTag, keyId? }` (all base64)                                            |
+| `EnvKeyProvider`         | class     | HKDF-derives a per-tenant key from one master secret                                          |
+| `StaticKeyProvider`      | class     | Fixed `tenantId -> key` map — tests/fixtures                                                  |
+| `TenantEncryptorOptions` | type      | `{ keyProvider: KeyProvider }`                                                                |
+| `TenantEncryptor`        | class     | `.encrypt(tenantId, plaintext, aad?)`, `.decrypt(tenantId, payload, aad?)`                    |
+| `SecurityKitError`       | class     | Base class every error in this package extends; carries a stable `.code`                      |
+| `DecryptionError`        | class     | Thrown by `.decrypt()` (bad key, tampered payload, wrong tenant); `code: 'DECRYPTION_FAILED'` |

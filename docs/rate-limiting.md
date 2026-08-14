@@ -170,15 +170,17 @@ interface is a small, explicit choice you make, not something bundled in.
 
 ## API reference
 
-| Export                               | Kind      | Summary                                                                       |
-| ------------------------------------ | --------- | ----------------------------------------------------------------------------- |
-| `RateLimitResult`                    | type      | `{ allowed, remaining, limit, resetMs }`                                      |
-| `RateLimitStore`                     | interface | `consume(key, points, limit, windowMs)`; optional `reset(key)`                |
-| `MemoryRateLimitStore`               | class     | Default in-memory, process-local store                                        |
-| `MemoryRateLimitStoreOptions`        | type      | `{ maxBuckets? }` — LRU-eviction cap, default `50_000`                        |
-| `TenantRateLimiterOptions`           | type      | `{ store?, limit, windowMs, keyPrefix? }`                                     |
-| `TenantRateLimiter`                  | class     | `new TenantRateLimiter(options)`; `.consume(tenantId, points?)`               |
-| `RateLimitMiddlewareOptions<Req>`    | type      | Options for `createRateLimitMiddleware`                                       |
-| `createRateLimitMiddleware(options)` | function  | Builds the enforcement middleware                                             |
-| `assertNotRateLimited(result)`       | function  | Throws `RateLimitExceededError` if `!result.allowed`, for non-HTTP call sites |
-| `InvalidRateLimitPointsError`        | class     | Thrown by `.consume()` if `points` isn't a positive, finite number            |
+| Export                               | Kind      | Summary                                                                                    |
+| ------------------------------------ | --------- | ------------------------------------------------------------------------------------------ |
+| `RateLimitResult`                    | type      | `{ allowed, remaining, limit, resetMs }`                                                   |
+| `RateLimitStore`                     | interface | `consume(key, points, limit, windowMs)`; optional `reset(key)`                             |
+| `MemoryRateLimitStore`               | class     | Default in-memory, process-local store                                                     |
+| `MemoryRateLimitStoreOptions`        | type      | `{ maxBuckets? }` — LRU-eviction cap, default `50_000`                                     |
+| `TenantRateLimiterOptions`           | type      | `{ store?, limit, windowMs, keyPrefix? }`                                                  |
+| `TenantRateLimiter`                  | class     | `new TenantRateLimiter(options)`; `.consume(tenantId, points?)`                            |
+| `RateLimitMiddlewareOptions<Req>`    | type      | Options for `createRateLimitMiddleware`                                                    |
+| `createRateLimitMiddleware(options)` | function  | Builds the enforcement middleware                                                          |
+| `assertNotRateLimited(result)`       | function  | Throws `RateLimitExceededError` if `!result.allowed`, for non-HTTP call sites              |
+| `SecurityKitError`                   | class     | Base class every error in this package extends; carries a stable `.code`                   |
+| `RateLimitExceededError`             | class     | Thrown by `assertNotRateLimited()`; `code: 'RATE_LIMIT_EXCEEDED'`, carries `.retryAfterMs` |
+| `InvalidRateLimitPointsError`        | class     | Thrown by `.consume()` if `points` isn't a positive, finite number                         |
