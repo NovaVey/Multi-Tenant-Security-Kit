@@ -97,7 +97,7 @@ const policy = new RbacPolicy([
 app.get(
   '/invoices',
   requirePermission({ policy, permission: 'invoices:read', getSubject: subjectFromRequestRoles() }),
-  async (req, res) => {
+  async (_req, res) => {
     // 4. Every query is scoped to the active tenant by construction.
     const rows = await db.invoices.find(scopeToTenant({ status: 'open' }));
     res.json(rows);

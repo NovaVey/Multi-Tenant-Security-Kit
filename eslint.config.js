@@ -9,7 +9,13 @@ export default tseslint.config(
     // is not a dependency of this package) — excluded from lint/typecheck
     // the same way dist/coverage/node_modules are, rather than pulled into
     // the project's strict TS project just to satisfy the linter.
-    ignores: ['dist/**', 'coverage/**', 'node_modules/**', 'examples/**'],
+    //
+    // doc-examples/ has its own separate, purpose-built tsconfig
+    // (doc-examples/tsconfig.json, self-references the built package —
+    // see doc-examples/README.md) and its own CI check (`npm run
+    // verify:docs`) — same reasoning as examples/, excluded here rather
+    // than force-fit into the main strict-typed project.
+    ignores: ['dist/**', 'coverage/**', 'node_modules/**', 'examples/**', 'doc-examples/**'],
   },
   js.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,

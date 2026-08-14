@@ -1,28 +1,52 @@
+# Release automation via Changesets — see CONTRIBUTING.md's "How a release
+# happens" and .changeset/README.md for the full flow. Runs on every push
+# to main and, via changesets/action, either:
+#   (a) opens/updates a "Version Packages" PR when there are pending
+#       .changeset/*.md files, or
+#   (b) publishes to npm — creating the git tag itself — once that PR has
+#       been merged (no pending changesets left, and package.json's version
+#       no longer matches what's published on npm).
+#
+# This replaces the previous tag-push-triggered release, which required a
+# maintainer to manually bump package.json AND push a git tag by hand for
+# every release. Changesets does both automatically; a maintainer's only
+# remaining job is reviewing/merging the Version Packages PR (and writing
+# its CHANGELOG.md entry — see .changeset/README.md, changelog generation
+# is deliberately off here).
+#
 # Requires a repository secret named NPM_TOKEN — an npm "Automation" access
-# token with publish rights to the @novavey scope — configured manually under
-# Settings -> Secrets and variables -> Actions before the first tagged release
-# is pushed. See docs/github-governance.md, step 3. Without it, the
-# "npm publish" step below will fail authentication.
+# token with publish rights to the @novavey scope — see
+# docs/github-governance.md, step 3.
+#
+# Requires the repo setting "Allow GitHub Actions to create and approve
+# pull requests" (Settings -> Actions -> General -> Workflow permissions) —
+# without it, changesets/action can't open the Version Packages PR. See
+# docs/github-governance.md, step 4 (same setting Dependabot auto-merge
+# needs).
 
 name: Release
 
 on:
   push:
-    tags:
-      - 'v*.*.*'
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
-  contents: write # to create the GitHub Release
+  contents: write # to push the Version Packages branch/commit and git tags
+  pull-requests: write # to open/update the Version Packages PR
   id-token: write # required for npm provenance
 
 jobs:
-  publish:
-    name: publish
+  release:
+    name: release
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 0 # full history so generated release notes can see merged PRs
+          fetch-depth: 0 # full history — changesets needs it to diff against the last release
 
       - uses: actions/setup-node@v7
         with:
@@ -32,14 +56,35 @@ jobs:
 
       - run: npm ci
 
-      # Full gate: format, lint, typecheck, test, and build must all pass
-      # before anything is ever published.
+      # Full gate: format, lint, typecheck, test, build, verify:dist,
+      # verify:docs must all pass before a Version Packages PR is ever
+      # opened against a broken main, or anything is ever published.
       - run: npm run verify
 
-      - run: npm publish --provenance --access public
+      - name: Version packages / publish
+        id: changesets
+        uses: changesets/action@v1
+        with:
+          version: npx changeset version
+          publish: npx changeset publish
+          commit: 'chore(release): version packages'
+          title: 'chore(release): version packages'
+          createGithubReleases: false
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - uses: softprops/action-gh-release@v3
+      # changesets/action creates the git tag itself on a successful
+      # publish (v<version> — confirmed against @changesets/cli's own
+      # tag-naming logic, which uses that format for a single-package,
+      # non-monorepo repo like this one, matching every tag so far). This
+      # step only adds the GitHub Release on top of that tag, with
+      # auto-generated notes (createGithubReleases: false above, so
+      # changesets/action doesn't also create one — CHANGELOG.md is the
+      # authoritative record; this is a convenience view of it via linked PRs).
+      - name: Create GitHub Release
+        if: steps.changesets.outputs.published == 'true'
+        uses: softprops/action-gh-release@v3
         with:
+          tag_name: v${{ fromJson(steps.changesets.outputs.publishedPackages)[0].version }}
           generate_release_notes: true
