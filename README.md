@@ -17,7 +17,7 @@ it.**
 npm install @novavey/multi-tenant-security-kit
 ```
 
-Node.js >=20.19. Ships as dual ESM/CJS with full TypeScript types. Works with
+Node.js >=22. Ships as dual ESM/CJS with full TypeScript types. Works with
 Express and any Express-alike framework — the package has no hard dependency
 on `express` itself (see [Framework compatibility](#framework-compatibility)).
 
