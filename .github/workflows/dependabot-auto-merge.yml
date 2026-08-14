@@ -23,6 +23,10 @@ name: Dependabot auto-merge
 
 on: pull_request
 
+# Explicit restrictive default — see release.yml for why this sits
+# alongside, not instead of, the job-level grant below.
+permissions: {}
+
 jobs:
   dependabot:
     runs-on: ubuntu-latest
