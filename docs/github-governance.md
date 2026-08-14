@@ -156,8 +156,12 @@ governance tier:
   be repointed by the upstream repo — accidentally or via a compromised
   maintainer account — and a rerun would silently execute different code
   with whatever permissions that job already has; a SHA can't be
-  repointed. `changesets/action@v1` and `ossf/scorecard-action@v2.4.4`
-  are the two deliberate exceptions, left on their version tags.
+  repointed. `changesets/action@v1` was the trickiest case: `v1` there is a
+  real branch (fast-forwarded to the latest v1.x.y release), not a tag, so
+  pinning it trades away automatically picking up future v1.x.y patches —
+  accepted, since Dependabot's `github-actions` ecosystem already tracks
+  SHA-pinned actions against new upstream releases and opens a bump PR the
+  same way it does for everything else pinned here.
 - Require **2** approving reviews instead of 1. **Not done** — left for a
   solo maintainer to opt into if/when there's a second regular reviewer;
   forcing it now would just mean self-approving or bypassing the rule.

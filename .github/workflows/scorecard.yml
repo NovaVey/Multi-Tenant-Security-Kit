@@ -47,7 +47,13 @@ jobs:
       # resolve action ossf/scorecard-action@v2, unable to find version
       # v2". Bump this tag periodically; check whether `@v2` has started
       # resolving again before reverting to it.
-      - uses: ossf/scorecard-action@v2.4.4
+      #
+      # Further pinned to the exact commit SHA, like every other third-party
+      # action in this repo — v2.4.4 is an annotated tag, so the SHA below
+      # is the dereferenced commit (`git ls-remote --tags
+      # https://github.com/ossf/scorecard-action v2.4.4 v2.4.4^{}`), not the
+      # tag object's own SHA.
+      - uses: ossf/scorecard-action@2d1146689b8cda280b9bc96326124645441f03bc # v2.4.4
         with:
           results_file: results.sarif
           results_format: sarif
