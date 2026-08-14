@@ -48,9 +48,16 @@ jobs:
         with:
           fetch-depth: 0 # full history — changesets needs it to diff against the last release
 
+      # Node 22, not 20: @changesets/cli@3 requires Node ^22.11 (its bin.js
+      # calls node:module's enableCompileCache() unconditionally, which
+      # doesn't exist on Node 20 — crashed the first real run of this
+      # workflow with "TypeError: enableCompileCache is not a function"
+      # before a single changeset command could run). Same class of miss as
+      # test-integration's Node 20 -> 22 fix — my own sandbox runs Node 22
+      # and never surfaced this locally.
       - uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '22'
           registry-url: 'https://registry.npmjs.org'
           cache: 'npm'
 
@@ -72,7 +79,16 @@ jobs:
           createGithubReleases: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Both needed, for different consumers: NODE_AUTH_TOKEN is what
+          # actually authenticates `npm publish` (via the .npmrc
+          # actions/setup-node's registry-url wires up). NPM_TOKEN is
+          # checked separately by changesets/action itself — without it,
+          # the first real run of this workflow logged "No NPM_TOKEN found,
+          # but OIDC is available - using npm trusted publishing" and tried
+          # an OIDC-based flow this npm package was never configured for,
+          # instead of the token auth that's actually set up and working.
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       # changesets/action creates the git tag itself on a successful
       # publish (v<version> — confirmed against @changesets/cli's own
