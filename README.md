@@ -169,8 +169,9 @@ dependency, peer or otherwise.
 - [RBAC](./docs/rbac.md) — policies, inheritance, wildcards, middleware
 - [Rate limiting](./docs/rate-limiting.md) — token bucket, custom stores, headers
 - [Audit logging](./docs/audit-logging.md) — sinks, redaction, child loggers
-- [Row-level security](./docs/row-level-security.md) — Postgres RLS SQL generation
+- [Row-level security](./docs/row-level-security.md) — Postgres RLS SQL generation, Prisma/Drizzle integration
 - [Encryption](./docs/encryption.md) — per-tenant AES-256-GCM, key providers
+- [Auth provider integrations](./docs/auth-integrations.md) — Auth.js, Clerk, Auth0
 
 ## Contributing
 
