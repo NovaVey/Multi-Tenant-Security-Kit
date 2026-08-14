@@ -1,3 +1,4 @@
+import { InvalidRateLimitPointsError } from '../errors.js';
 import { MemoryRateLimitStore } from './memory-store.js';
 import type { RateLimitResult, RateLimitStore } from './types.js';
 
@@ -47,8 +48,19 @@ export class TenantRateLimiter {
    * budget. The store key is `${keyPrefix}:${tenantId}`, so unrelated
    * tenants (and, when a store is shared across limiters, unrelated
    * limiters via distinct prefixes) never share a bucket.
+   *
+   * @throws {InvalidRateLimitPointsError} if `points` isn't a positive,
+   * finite number — a zero, negative, `NaN`, or infinite value would
+   * otherwise reach the store's own arithmetic unchecked, and (depending
+   * on the store implementation) could unconditionally succeed regardless
+   * of the tenant's actual remaining budget. Validated here, once, so
+   * every {@link RateLimitStore} implementation (not just
+   * {@link MemoryRateLimitStore}) gets this guarantee for free.
    */
-  consume(tenantId: string, points = 1): Promise<RateLimitResult> {
+  async consume(tenantId: string, points = 1): Promise<RateLimitResult> {
+    if (!Number.isFinite(points) || points <= 0) {
+      throw new InvalidRateLimitPointsError(points);
+    }
     const key = `${this.keyPrefix}:${tenantId}`;
     return this.store.consume(key, points, this.limit, this.windowMs);
   }

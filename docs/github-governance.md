@@ -147,6 +147,17 @@ governance tier:
   the required-status-checks list below (same advisory posture as
   `security-audit`) — add `Analyze (javascript-typescript)` there yourself if
   you want it to block merges.
+- ~~Pin third-party GitHub Actions to a commit SHA instead of a floating
+  version tag.~~ **Done** — every third-party action across all 5 workflow
+  files is pinned to a full 40-character commit SHA, with a trailing
+  `# vX` comment for readability (and so Dependabot's `github-actions`
+  ecosystem updates, already configured in `dependabot.yml`, can still find
+  and bump the pin when a new version ships). A floating tag like `@v3` can
+  be repointed by the upstream repo — accidentally or via a compromised
+  maintainer account — and a rerun would silently execute different code
+  with whatever permissions that job already has; a SHA can't be
+  repointed. `changesets/action@v1` and `ossf/scorecard-action@v2.4.4`
+  are the two deliberate exceptions, left on their version tags.
 - Require **2** approving reviews instead of 1. **Not done** — left for a
   solo maintainer to opt into if/when there's a second regular reviewer;
   forcing it now would just mean self-approving or bypassing the rule.

@@ -152,4 +152,76 @@ describe('MemoryRateLimitStore', () => {
     const second = await store.consume('acme', 1, 10, 1000);
     expect(second.limit).toBe(10);
   });
+
+  // Regression: this store had no eviction at all — every distinct key ever
+  // seen accumulated in the Map forever. Combined with an unauthenticated
+  // key source (e.g. a tenant resolver trusting a client-supplied header),
+  // that's an unbounded-memory-growth DoS vector. maxBuckets bounds it via
+  // inline LRU eviction, no timers.
+  describe('maxBuckets (LRU eviction)', () => {
+    it('defaults to never evicting for realistic key counts', async () => {
+      const store = new MemoryRateLimitStore();
+      for (let i = 0; i < 1000; i++) {
+        await store.consume(`tenant-${i}`, 1, 5, 1000);
+      }
+      expect(store.size).toBe(1000);
+    });
+
+    it('evicts the least-recently-used key once maxBuckets is exceeded', async () => {
+      const store = new MemoryRateLimitStore({ maxBuckets: 2 });
+
+      await store.consume('a', 1, 5, 1000);
+      await store.consume('b', 1, 5, 1000);
+      expect(store.size).toBe(2);
+
+      // A 3rd distinct key pushes size over the cap — 'a' (least recently
+      // used, never touched again since) should be evicted, not 'b'.
+      await store.consume('c', 1, 5, 1000);
+      expect(store.size).toBe(2);
+
+      // 'a' was evicted: this "second" consume for 'a' actually starts a
+      // fresh bucket (remaining = limit - 1 = 4), not a continuation of
+      // its earlier state (which would be remaining = 3 after 2 calls).
+      const aAgain = await store.consume('a', 1, 5, 1000);
+      expect(aAgain.remaining).toBe(4);
+    });
+
+    it('touching a key via consume() protects it from eviction (real LRU, not FIFO)', async () => {
+      const store = new MemoryRateLimitStore({ maxBuckets: 2 });
+
+      await store.consume('a', 1, 5, 1000);
+      await store.consume('b', 1, 5, 1000);
+      // Touch 'a' again — it's now the most-recently-used, 'b' is now the
+      // least-recently-used, even though 'a' was inserted first.
+      await store.consume('a', 1, 5, 1000);
+
+      // A 3rd distinct key should evict 'b' (LRU), not 'a', even though a
+      // naive FIFO-by-insertion-order eviction would have picked 'a'.
+      await store.consume('c', 1, 5, 1000);
+
+      // 'a' should still hold its accumulated state (2 consumes deep:
+      // remaining = 5 - 2 = 3 before this 3rd real consume).
+      const aStillTracked = await store.consume('a', 1, 5, 1000);
+      expect(aStillTracked.remaining).toBe(2);
+
+      // 'b' was evicted: starts fresh.
+      const bEvicted = await store.consume('b', 1, 5, 1000);
+      expect(bEvicted.remaining).toBe(4);
+    });
+
+    it('never evicts when re-consuming an already-tracked key, even at the cap', async () => {
+      const store = new MemoryRateLimitStore({ maxBuckets: 1 });
+      await store.consume('a', 1, 5, 1000);
+      expect(store.size).toBe(1);
+
+      // Repeated calls to the SAME key never grow past 1 entry and never
+      // spuriously evict 'a' itself.
+      await store.consume('a', 1, 5, 1000);
+      await store.consume('a', 1, 5, 1000);
+      expect(store.size).toBe(1);
+
+      const result = await store.consume('a', 1, 5, 1000);
+      expect(result.remaining).toBe(1); // 5 - 4 real consumes
+    });
+  });
 });

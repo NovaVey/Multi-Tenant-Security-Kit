@@ -93,6 +93,28 @@ export class RateLimitExceededError extends SecurityKitError {
   }
 }
 
+/**
+ * Thrown when a caller passes a `points` value to {@link TenantRateLimiter.consume}
+ * that isn't a positive, finite number. A zero, negative, `NaN`, or infinite
+ * `points` would otherwise unconditionally succeed regardless of a tenant's
+ * actual remaining budget (zero/negative never exceeds the bucket; `NaN`
+ * comparisons are always `false`) — a real bypass risk given this library's
+ * own "variable request cost" feature explicitly invites deriving `points`
+ * from request data.
+ */
+export class InvalidRateLimitPointsError extends SecurityKitError {
+  readonly points: unknown;
+
+  constructor(points: unknown, message?: string) {
+    super(
+      message ??
+        `Invalid rate-limit points: ${JSON.stringify(points)}. Must be a positive, finite number.`,
+      'INVALID_RATE_LIMIT_POINTS',
+    );
+    this.points = points;
+  }
+}
+
 /** Thrown for malformed or missing tenant identifiers. */
 export class InvalidTenantIdError extends SecurityKitError {
   constructor(tenantId: unknown, message?: string) {

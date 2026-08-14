@@ -47,7 +47,7 @@ jobs:
     name: release
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0 # full history — changesets needs it to diff against the last release
 
@@ -58,7 +58,7 @@ jobs:
       # before a single changeset command could run). Same class of miss as
       # test-integration's Node 20 -> 22 fix — my own sandbox runs Node 22
       # and never surfaced this locally.
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
@@ -133,20 +133,42 @@ jobs:
           # a publish that just happened earlier in this same job — the
           # 0.2.1 release proved this for real: `npm view` ran well under a
           # second after `npx changeset publish` printed "Successfully
-          # published", and still 404'd. Retry with backoff (30s total)
-          # instead of trusting a single immediate read.
-          for attempt in 1 2 3 4 5 6; do
+          # published", and still 404'd. Retry with backoff instead of
+          # trusting a single immediate read. 10 attempts, delay growing
+          # 5s -> 23s (sums to ~140s total) is margin, not a guarantee —
+          # see the hard failure below for what happens if it's still not
+          # enough.
+          delay=5
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
             if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
               echo "$NAME@$VERSION is on npm and v$VERSION isn't tagged yet — this run published it."
               echo "published=true" >> "$GITHUB_OUTPUT"
               echo "version=$VERSION" >> "$GITHUB_OUTPUT"
               exit 0
             fi
-            echo "Attempt $attempt/6: $NAME@$VERSION not visible on npm's registry yet (propagation lag), retrying in 5s..."
-            sleep 5
+            echo "Attempt $attempt/10: $NAME@$VERSION not visible on npm's registry yet (propagation lag), retrying in ${delay}s..."
+            sleep "$delay"
+            delay=$((delay + 2))
           done
-          echo "::warning::$NAME@$VERSION never became visible on npm after 30s of retries — treating as not published this run. If a publish genuinely happened, check npm and tag/release manually."
+          # A hard failure here, not a silent warning: by the time this
+          # step runs, changesets/action's own publish step (above) has
+          # already exited 0 — meaning `npm publish` itself very likely
+          # already succeeded, npm's registry read path is just still
+          # catching up. Silently continuing with published=false used to
+          # bury that in a `::warning::` easy to miss in a wall of green
+          # checks, leaving a published-but-untagged/unreleased version
+          # that needed a human to notice and recover by hand (as
+          # happened for real on 0.2.0/0.2.1). Failing the job instead
+          # makes this workflow run visibly red — a real signal, not a
+          # silent gap — while leaving the underlying publish (which this
+          # step never rolls back regardless) exactly as-is. Recover by
+          # confirming with `npm view "$NAME@$VERSION" version`, then
+          # either re-running this job (harmless: the git-ls-remote check
+          # above makes it a no-op once tagged) or tagging/releasing by
+          # hand per CONTRIBUTING.md.
+          echo "::error::$NAME@$VERSION never became visible on npm after ~140s of retries. The publish itself is NOT rolled back by this failure — it very likely already succeeded. This run will NOT create the git tag or GitHub Release automatically; see this step's log for recovery steps."
           echo "published=false" >> "$GITHUB_OUTPUT"
+          exit 1
 
       # Creates the vX.Y.Z tag AND the GitHub Release together — GitHub's
       # release-creation API auto-creates a tag_name that doesn't exist yet,
@@ -159,7 +181,7 @@ jobs:
       # convenience view of it via linked PRs).
       - name: Create git tag + GitHub Release
         if: steps.check-publish.outputs.published == 'true'
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
         with:
           tag_name: v${{ steps.check-publish.outputs.version }}
           generate_release_notes: true
