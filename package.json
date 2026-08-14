@@ -40,41 +40,98 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     },
     "./tenant": {
-      "types": "./dist/tenant/index.d.ts",
-      "import": "./dist/tenant/index.js",
-      "require": "./dist/tenant/index.cjs"
+      "import": {
+        "types": "./dist/tenant/index.d.ts",
+        "default": "./dist/tenant/index.js"
+      },
+      "require": {
+        "types": "./dist/tenant/index.d.cts",
+        "default": "./dist/tenant/index.cjs"
+      }
     },
     "./rbac": {
-      "types": "./dist/rbac/index.d.ts",
-      "import": "./dist/rbac/index.js",
-      "require": "./dist/rbac/index.cjs"
+      "import": {
+        "types": "./dist/rbac/index.d.ts",
+        "default": "./dist/rbac/index.js"
+      },
+      "require": {
+        "types": "./dist/rbac/index.d.cts",
+        "default": "./dist/rbac/index.cjs"
+      }
     },
     "./rate-limit": {
-      "types": "./dist/rate-limit/index.d.ts",
-      "import": "./dist/rate-limit/index.js",
-      "require": "./dist/rate-limit/index.cjs"
+      "import": {
+        "types": "./dist/rate-limit/index.d.ts",
+        "default": "./dist/rate-limit/index.js"
+      },
+      "require": {
+        "types": "./dist/rate-limit/index.d.cts",
+        "default": "./dist/rate-limit/index.cjs"
+      }
     },
     "./audit": {
-      "types": "./dist/audit/index.d.ts",
-      "import": "./dist/audit/index.js",
-      "require": "./dist/audit/index.cjs"
+      "import": {
+        "types": "./dist/audit/index.d.ts",
+        "default": "./dist/audit/index.js"
+      },
+      "require": {
+        "types": "./dist/audit/index.d.cts",
+        "default": "./dist/audit/index.cjs"
+      }
     },
     "./rls": {
-      "types": "./dist/rls/index.d.ts",
-      "import": "./dist/rls/index.js",
-      "require": "./dist/rls/index.cjs"
+      "import": {
+        "types": "./dist/rls/index.d.ts",
+        "default": "./dist/rls/index.js"
+      },
+      "require": {
+        "types": "./dist/rls/index.d.cts",
+        "default": "./dist/rls/index.cjs"
+      }
     },
     "./crypto": {
-      "types": "./dist/crypto/index.d.ts",
-      "import": "./dist/crypto/index.js",
-      "require": "./dist/crypto/index.cjs"
+      "import": {
+        "types": "./dist/crypto/index.d.ts",
+        "default": "./dist/crypto/index.js"
+      },
+      "require": {
+        "types": "./dist/crypto/index.d.cts",
+        "default": "./dist/crypto/index.cjs"
+      }
     },
     "./package.json": "./package.json"
+  },
+  "typesVersions": {
+    "*": {
+      "tenant": [
+        "./dist/tenant/index.d.ts"
+      ],
+      "rbac": [
+        "./dist/rbac/index.d.ts"
+      ],
+      "rate-limit": [
+        "./dist/rate-limit/index.d.ts"
+      ],
+      "audit": [
+        "./dist/audit/index.d.ts"
+      ],
+      "rls": [
+        "./dist/rls/index.d.ts"
+      ],
+      "crypto": [
+        "./dist/crypto/index.d.ts"
+      ]
+    }
   },
   "publishConfig": {
     "access": "public",
@@ -94,10 +151,12 @@
     "typecheck": "tsc --noEmit",
     "verify:dist": "node scripts/verify-dist-singleton.mjs",
     "verify:docs": "node scripts/verify-docs.mjs",
-    "verify": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build && npm run verify:dist && npm run verify:docs",
+    "verify:types": "attw --pack .",
+    "verify": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build && npm run verify:dist && npm run verify:docs && npm run verify:types",
     "prepublishOnly": "npm run verify"
   },
   "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
     "@auth/express": "^0.12.3",
     "@changesets/cli": "^3.0.0",
     "@clerk/express": "^2.1.56",

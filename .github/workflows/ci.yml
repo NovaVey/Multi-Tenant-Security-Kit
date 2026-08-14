@@ -71,6 +71,17 @@ jobs:
       # this job just produced — see doc-examples/README.md. Needs dist/,
       # hence living in this job rather than lint-and-typecheck.
       - run: npm run verify:docs
+      # Catches a real, previously-shipped bug class that every other check
+      # here missed: `tsc --noEmit` and verify:docs both type-check against
+      # *source*-adjacent .ts files, never against what a consumer actually
+      # resolves through package.json's `exports` map in the published
+      # tarball. That's exactly how a broken/missing `typesVersions` or a
+      # mismatched ESM/CJS `types` condition shipped to 1.0.0 undetected —
+      # `@arethetypeswrong/cli` builds the real tarball (via `npm pack`) and
+      # checks type resolution against it under node10/node16/bundler
+      # resolution, which is the only way to catch this class of bug before
+      # it reaches npm. Needs dist/, hence also living in this job.
+      - run: npm run verify:types
 
   # Not in the required status checks list yet — this is new (proves the RLS
   # module's SQL actually enforces isolation against a real Postgres, not

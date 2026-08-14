@@ -106,13 +106,20 @@ jobs:
       # registry directly instead of trusting that string match.
       #
       # Only bother checking at all when changesets/action's own
-      # hasChangesets output says a publish was actually attempted this run
-      # (no pending changesets left) — skips the check (and its retry loop
-      # below) entirely on every ordinary "just opened/updated the Version
-      # Packages PR" run, which is most of them.
+      # has-changesets output (steps.changesets.outputs['has-changesets'] —
+      # note the hyphen: changesets/action's action.yml declares this output
+      # as "has-changesets", not "hasChangesets"; GitHub Actions' outputs
+      # context does case-insensitive but NOT hyphen-insensitive property
+      # lookup, so the un-hyphenated form silently evaluates to an always-
+      # true `null != 'true'` instead of erroring — verified by pulling
+      # changesets/action's own source rather than assuming) says a publish
+      # was actually attempted this run (no pending changesets left) —
+      # skips the check (and its retry loop below) entirely on every
+      # ordinary "just opened/updated the Version Packages PR" run, which is
+      # most of them.
       - name: Check whether this run actually published a new version
         id: check-publish
-        if: steps.changesets.outputs.hasChangesets != 'true'
+        if: steps.changesets.outputs['has-changesets'] != 'true'
         run: |
           set -euo pipefail
           VERSION="$(node -p "require('./package.json').version")"
