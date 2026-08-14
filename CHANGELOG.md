@@ -6,6 +6,21 @@ follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-08-14
+
+### Fixed
+
+- `package.json`'s `homepage`, `bugs.url`, and `repository.url` (and a
+  JSDoc `@link` in `src/rbac/middleware.ts`) used an all-lowercase repo
+  path (`NovaVey/multi-tenant-security-kit`) instead of the repository's
+  correct case (`NovaVey/Multi-Tenant-Security-Kit`). GitHub's own routing
+  is case-insensitive so this never broke anything on github.com, but it
+  broke the OpenSSF Scorecard badge/viewer link in `README.md` —
+  `scorecard.dev`'s lookup is case-sensitive and returned "invalid repo
+  path" for the lowercase form. Fixed the same casing across every other
+  reference repo-wide (docs, issue templates, `CONTRIBUTING.md`'s clone
+  command).
+
 ## [1.1.0] - 2026-08-14
 
 Fixes every issue found by a post-1.0 in-depth security audit — 17
@@ -406,7 +421,8 @@ AuditSinkError) => ...`, as shown in docs/audit-logging.md, previously
   manual branch-protection setup checklist
   (`docs/github-governance.md`).
 
-[Unreleased]: https://github.com/NovaVey/Multi-Tenant-Security-Kit/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/NovaVey/Multi-Tenant-Security-Kit/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/NovaVey/Multi-Tenant-Security-Kit/releases/tag/v1.1.1
 [1.1.0]: https://github.com/NovaVey/Multi-Tenant-Security-Kit/releases/tag/v1.1.0
 [1.0.0]: https://github.com/NovaVey/Multi-Tenant-Security-Kit/releases/tag/v1.0.0
 [0.3.0]: https://github.com/NovaVey/Multi-Tenant-Security-Kit/releases/tag/v0.3.0
