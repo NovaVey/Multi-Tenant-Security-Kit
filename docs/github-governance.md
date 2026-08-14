@@ -43,17 +43,21 @@ Create a rule targeting `main` with:
     them), select these exact checks — the job names come directly from
     `.github/workflows/ci.yml`:
     - `lint-and-typecheck`
-    - `test (20)`
     - `test (22)`
     - `build`
-  - **If you configured this before reading this note:** the CI matrix
-    originally also tested Node `18.18.0`, and this repo's required-checks
-    list may still have `test (18.18.0)` selected from that first pass. That
-    check no longer exists — the matrix was narrowed to Node 20/22 after CI
-    proved `vitest@4` (needed to fix real CVEs in an older `vitest`/`esbuild`)
-    cannot run on Node 18 at all. A required check that will never report in
-    again permanently blocks merging. Go back into the rule and **deselect
-    `test (18.18.0)`** if it's still checked.
+  - **If you configured this before reading this note:** the CI matrix has
+    been narrowed twice since this repo's first pass at required checks,
+    each time because a required check stopped reporting in — a check that
+    will never report again permanently blocks merging, so go back into the
+    rule and deselect it if it's still checked:
+    - The matrix originally also tested Node `18.18.0`; that check
+      (`test (18.18.0)`) no longer exists — `vitest@4` (needed to fix real
+      CVEs in an older `vitest`/`esbuild`) cannot run on Node 18 at all.
+    - The matrix then tested Node `20` and `22`; `test (20)` no longer
+      exists either — this package's `engines.node` moved to `>=22` once
+      Node 20 ("Iron") reached its own end-of-life, and the CI matrix
+      dropped it to match rather than testing an already-unsupported
+      runtime.
   - Do **not** add `security-audit` to this list — it's intentionally
     advisory (`continue-on-error: true` in the workflow) under the Standard
     tier this repo uses. See Step 7 for the upgrade path.

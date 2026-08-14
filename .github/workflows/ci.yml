@@ -22,7 +22,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       - run: npm ci
@@ -30,12 +30,18 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
 
+  # Single-entry matrix (not a plain step) deliberately kept as a matrix:
+  # GitHub Actions still names the check "test (22)" with the parens suffix
+  # even with one value, so this required status check's name is unchanged
+  # from before Node 20 was dropped — no branch-protection rule update
+  # needed for this one, unlike `test (20)` itself (see
+  # docs/github-governance.md Step 2's migration note).
   test:
     name: test
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node-version: ['20', '22']
+        node-version: ['22']
     steps:
       - uses: actions/checkout@v7
 
@@ -56,7 +62,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       - run: npm ci
@@ -74,12 +80,15 @@ jobs:
   # this to required is a manual, deliberate choice — see
   # docs/github-governance.md Step 6.
   #
-  # Runs on Node 22 specifically (not the '20' the rest of CI uses): the
-  # `testcontainers` devDependency requires Node >=22.22 — on 20.x its
-  # transitive `undici` throws `webidl.util.markAsUncloneable is not a
-  # function` before a single test even runs. This only affects this one
-  # dev-tooling job; the published package's own `engines.node` (>=20.19)
-  # and the rest of CI's Node 20/22 matrix are unrelated and unchanged.
+  # Runs on Node 22, same as the rest of CI now (it wasn't always — this
+  # job originally ran Node 22 specifically while the rest of CI still
+  # matrixed Node 20/22, because the `testcontainers` devDependency
+  # requires Node >=22.22: on 20.x its transitive `undici` throws
+  # `webidl.util.markAsUncloneable is not a function` before a single test
+  # even runs. That constraint is moot now that Node 20 was dropped
+  # everywhere (engines.node is >=22 as of this package's stable line), but
+  # is worth keeping in mind if this job's Node version is ever lowered
+  # again independently of the rest of CI.
   test-integration:
     name: test-integration
     runs-on: ubuntu-latest
@@ -111,7 +120,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       - run: npm ci
