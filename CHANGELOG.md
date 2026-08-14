@@ -6,6 +6,78 @@ follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-14
+
+### Added
+
+- **OpenTelemetry integration for the audit module** (`/audit`):
+  `openTelemetrySink({ getActiveSpan })` and
+  `traceContextTransform({ getActiveSpan })`. The sink records every audit
+  event as a span event on the currently active span and marks the span an
+  error for any outcome other than `'success'`; the transform stamps
+  `traceId`/`spanId` from the active span onto every event's `metadata` (via
+  `AuditLoggerOptions.redact`) so even sinks with no OpenTelemetry awareness
+  can be correlated back to the trace that produced them. Neither imports
+  `@opentelemetry/api` — this package keeps its zero-runtime-dependency
+  footprint by accepting a `getActiveSpan` callback typed against a small
+  structural `OtelSpanLike` interface, which a real `@opentelemetry/api`
+  `Span` satisfies with no adapter or cast. See
+  `docs/audit-logging.md`'s "OpenTelemetry integration" section.
+- `docs/auth-integrations.md` — adapter guide wiring **Auth.js**
+  (`@auth/express`), **Clerk** (`@clerk/express`), and **Auth0**
+  (`express-oauth2-jwt-bearer`) session/claims into `claimTenantResolver`
+  and `subjectFromRequestRoles`. Each provider's real claim shape (Clerk's
+  single-string `orgRole`, Auth0's namespaced custom claims via Actions,
+  `express-oauth2-jwt-bearer`'s global `Express.Request.auth` augmentation)
+  was confirmed against the SDK's own installed `.d.ts` output rather than
+  assumed from memory.
+- `docs/row-level-security.md`: new "Using an ORM" section covering
+  **Prisma** (`$transaction` + `$executeRawUnsafe`, which accepts
+  `generateSetTenantContextSql()`'s `$1`-placeholder output directly) and
+  **Drizzle** (`db.transaction` + its own ` sql` `` tagged template —
+  `db.execute()` does **not** accept a raw string plus a separate params
+  array the way `pg`/Prisma's `$executeRawUnsafe` do, confirmed directly
+  against `drizzle-orm`'s own type declarations before documenting it).
+- `test/integration/rls-postgres.integration.test.ts` — RLS enforcement
+  tested against a real Postgres (via `testcontainers`), connecting as a
+  non-superuser table-owner role so `FORCE ROW LEVEL SECURITY` is actually
+  exercised (superusers bypass RLS unconditionally, making that setting a
+  no-op in a naive test setup). Run via `npm run test:integration`
+  (requires Docker), separate from the fast unit suite.
+- `test/rls/postgres.fuzz.test.ts` and `test/tenant/tenant-id.fuzz.test.ts`
+  — property-based fuzz tests (`fast-check`) against this package's own
+  identifier/tenant-id validation regexes and a curated corpus of
+  SQL-injection-shaped payloads.
+- OpenSSF Scorecard workflow (`.github/workflows/scorecard.yml`) and badge.
+- `doc-examples/` is now a permanent, CI-enforced check (`npm run
+verify:docs`, wired into `npm run verify` and CI's `build` job): every
+  code sample in `README.md` and `docs/*.md` is mirrored here and actually
+  type-checked/run against the real built package (resolved through this
+  repo's own `package.json` `exports` map, the same way a real consumer's
+  `import` would resolve), not just eyeballed. See
+  `doc-examples/README.md`.
+- Release automation via [Changesets](https://github.com/changesets/changesets)
+  (`.github/workflows/release.yml`, `.changeset/`): a PR that changes
+  published behavior adds a changeset; on merge to `main`, a "Version
+  Packages" PR accumulates the resulting version bump; merging that PR
+  publishes to npm (with provenance), pushes the `vX.Y.Z` tag, and creates
+  the GitHub Release automatically. Replaces the previous flow, which
+  required manually bumping `package.json` and pushing a git tag by hand
+  for every release (0.1.0 - 0.1.2). See `CONTRIBUTING.md`'s "How a release
+  happens".
+
+### Fixed
+
+- The first real run of `release.yml` failed at the "create pull request"
+  step with `GitHub Actions is not permitted to create or approve pull
+requests` — the repo setting documented in `docs/github-governance.md`
+  Step 4 ("Allow GitHub Actions to create and approve pull requests") was
+  not yet enabled. This release's Version Packages PR (#16) was opened by
+  hand from the branch `changesets/action` had already pushed successfully
+  (only the PR-creation API call needs that permission, not the git push)
+  to unblock this release; an admin still needs to enable that setting so
+  future releases open the PR automatically.
+
 ## [0.1.2] - 2026-08-13
 
 ### Fixed
