@@ -6,6 +6,54 @@ follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-08-14
+
+First stable release. No breaking changes from `0.3.0` — this entry marks
+a commitment, not a migration.
+
+### What "stable" means from here
+
+Per [`docs/versioning-policy.md`](./docs/versioning-policy.md), added in
+`0.2.1`:
+
+- **The public API is exactly what's reachable through this package's
+  `exports` map** — the root entry point and the `/tenant`, `/rbac`,
+  `/rate-limit`, `/audit`, `/rls`, `/crypto` subpaths. Nothing else is
+  covered, regardless of what a source file happens to export.
+- **`error.code` values are stable.** Every error this package throws
+  extends `SecurityKitError` and carries a machine-readable `code`;
+  existing values won't change or be removed without a `MAJOR` bump.
+- **Nothing gets removed or renamed without a full deprecation cycle**:
+  an `@deprecated` release first, removal only in the next `MAJOR` after
+  that.
+- Breaking changes are `MAJOR` only, new backward-compatible capabilities
+  are `MINOR`, fixes are `PATCH` — including for `engines.node` bumps
+  (driven by upstream Node's own EOL schedule, not this package's API).
+
+### The path here
+
+Six modules — `tenant`, `rbac`, `rate-limit`, `audit`, `rls`, `crypto` —
+shipped together in `0.1.0` and hardened over four subsequent phases:
+
+- **RLS enforcement verified against a real Postgres** (not just its
+  generated SQL text), plus property-based fuzz testing of every
+  identifier-validation code path against a curated SQL-injection-payload
+  corpus, and an OpenSSF Scorecard supply-chain check.
+- **Every code sample in `README.md` and `docs/*.md` is type-checked and
+  run in CI** against the real built package — the exact mechanism that
+  catches a doc that looks right but doesn't compile before it ships, not
+  after — alongside fully automated Changesets-driven releases (this
+  release included).
+- **Auth-provider integration guide** (Auth.js, Clerk, Auth0) and a
+  **Prisma/Drizzle RLS integration guide**, both verified against the
+  real SDKs' installed types rather than assumed from memory.
+- **Optional OpenTelemetry hooks** for the audit module, with zero new
+  runtime dependencies.
+- A final API-surface review closing the two consistency gaps found
+  (`rls`'s `InvalidSqlIdentifierError`, `SecurityKitError` re-exported
+  from every subpath — both in `0.2.1`) and raising the Node floor off an
+  already-end-of-life runtime (`0.3.0`).
+
 ## [0.3.0] - 2026-08-14
 
 ### Changed
@@ -273,7 +321,8 @@ AuditSinkError) => ...`, as shown in docs/audit-logging.md, previously
   manual branch-protection setup checklist
   (`docs/github-governance.md`).
 
-[Unreleased]: https://github.com/NovaVey/multi-tenant-security-kit/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/NovaVey/multi-tenant-security-kit/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/NovaVey/multi-tenant-security-kit/releases/tag/v1.0.0
 [0.3.0]: https://github.com/NovaVey/multi-tenant-security-kit/releases/tag/v0.3.0
 [0.2.1]: https://github.com/NovaVey/multi-tenant-security-kit/releases/tag/v0.2.1
 [0.2.0]: https://github.com/NovaVey/multi-tenant-security-kit/releases/tag/v0.2.0
