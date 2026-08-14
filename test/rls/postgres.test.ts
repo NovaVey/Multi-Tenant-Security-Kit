@@ -91,8 +91,7 @@ describe('generateTenantIsolationPolicySql', () => {
       [
         'CREATE POLICY "invoices_tenant_isolation" ON "invoices"',
         '  FOR SELECT',
-        '  USING ("tenant_id" = current_setting(\'app.current_tenant_id\', true))',
-        '  WITH CHECK ("tenant_id" = current_setting(\'app.current_tenant_id\', true));',
+        '  USING ("tenant_id" = current_setting(\'app.current_tenant_id\', true));',
       ].join('\n'),
     );
   });
@@ -104,6 +103,42 @@ describe('generateTenantIsolationPolicySql', () => {
       );
     });
   }
+
+  // Postgres itself rejects USING on an INSERT-only policy and rejects WITH
+  // CHECK on a SELECT- or DELETE-only policy — `CREATE POLICY ... FOR
+  // SELECT ... WITH CHECK (...)` is a syntax error, not a harmless no-op.
+  // These lock in exactly which clause(s) each `command` value emits;
+  // test/integration/rls-postgres.integration.test.ts proves the generated
+  // SQL for every command actually *executes* against real Postgres.
+  it('SELECT emits only USING, never WITH CHECK', () => {
+    const sql = generateTenantIsolationPolicySql({ table: 'invoices', command: 'SELECT' });
+    expect(sql).toContain('USING (');
+    expect(sql).not.toContain('WITH CHECK');
+  });
+
+  it('DELETE emits only USING, never WITH CHECK', () => {
+    const sql = generateTenantIsolationPolicySql({ table: 'invoices', command: 'DELETE' });
+    expect(sql).toContain('USING (');
+    expect(sql).not.toContain('WITH CHECK');
+  });
+
+  it('INSERT emits only WITH CHECK, never USING', () => {
+    const sql = generateTenantIsolationPolicySql({ table: 'invoices', command: 'INSERT' });
+    expect(sql).toContain('WITH CHECK (');
+    expect(sql).not.toContain('USING');
+  });
+
+  it('UPDATE emits both USING and WITH CHECK', () => {
+    const sql = generateTenantIsolationPolicySql({ table: 'invoices', command: 'UPDATE' });
+    expect(sql).toContain('USING (');
+    expect(sql).toContain('WITH CHECK (');
+  });
+
+  it('ALL (default) emits both USING and WITH CHECK', () => {
+    const sql = generateTenantIsolationPolicySql({ table: 'invoices' });
+    expect(sql).toContain('USING (');
+    expect(sql).toContain('WITH CHECK (');
+  });
 
   it('produces exact expected SQL with a roles list', () => {
     expect(
