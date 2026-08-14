@@ -91,6 +91,67 @@ await client.query('COMMIT');
 the setting to the current transaction, so it can't leak onto a pooled
 connection that gets reused by a later, differently-tenanted request.
 
+## Using an ORM (Prisma, Drizzle)
+
+The same rule applies with an ORM: `set_config(..., true)` is scoped to the
+current **transaction**, so the tenant-context call and every tenant-scoped
+query after it must run inside the same interactive transaction — never as
+two separate pool-borrowed queries, which could each land on a different
+pooled connection (or the same connection after it's already been handed to
+a different tenant's request).
+
+### Prisma
+
+Prisma's raw-query methods accept the exact `$1`-placeholder convention
+`generateSetTenantContextSql()` already generates, so it drops in directly
+inside `$transaction`'s interactive-transaction callback:
+
+```ts
+import type { PrismaClient } from '@prisma/client';
+import { generateSetTenantContextSql } from '@novavey/multi-tenant-security-kit/rls';
+
+async function withTenantScope<T>(prisma: PrismaClient, fn: (tx: PrismaClient) => Promise<T>) {
+  return prisma.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe(generateSetTenantContextSql(), tenantId);
+    return fn(tx);
+  });
+}
+```
+
+`$executeRawUnsafe` (not `$executeRaw`) is required here specifically
+because `generateSetTenantContextSql()` returns a plain SQL string rather
+than a `Prisma.sql` tagged template — the tenant id itself still goes
+through Prisma's normal parameter binding as the second argument, so it's
+never concatenated into the query text.
+
+### Drizzle
+
+Drizzle's `db.execute()` does **not** accept a raw string plus a separate
+params array the way `pg` and Prisma's `$executeRawUnsafe` do — it only
+takes a Drizzle `SQL` object, built with Drizzle's own `sql` tagged
+template. `generateSetTenantContextSql()`'s pre-built `$1`-placeholder
+string can't be passed to it directly; use `sql` to build the equivalent
+call instead, letting Drizzle bind the tenant id as its own parameter:
+
+```ts
+import type { NodePgDatabase as DrizzleClient } from 'drizzle-orm/node-postgres'; // or whichever driver you use
+import { sql } from 'drizzle-orm';
+
+async function withTenantScope<T>(db: DrizzleClient, fn: (tx: DrizzleClient) => Promise<T>) {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT set_config('app.current_tenant_id', ${tenantId}, true)`);
+    return fn(tx);
+  });
+}
+```
+
+The session-setting name (`'app.current_tenant_id'`) is a SQL identifier,
+not a value — Drizzle's `${}` interpolation, like `generateSetTenantContextSql`'s
+own security model (see the top of this page), only ever binds _values_,
+never identifiers, so it's written as a literal here rather than passed in.
+If you customized `sessionSetting` when calling `generateTenantIsolationPolicySql`,
+hardcode that same name in this string.
+
 ## Composing a tenant filter into a hand-written query
 
 ```ts
