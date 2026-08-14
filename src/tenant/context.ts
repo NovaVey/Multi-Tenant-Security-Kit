@@ -5,7 +5,7 @@ import type { TenantContext } from './types.js';
 
 /**
  * `AsyncLocalStorage`-backed store for the "current tenant" — the single
- * source of truth that {@link https://github.com/NovaVey/multi-tenant-security-kit#rbac | RBAC},
+ * source of truth that {@link https://github.com/NovaVey/Multi-Tenant-Security-Kit#rbac | RBAC},
  * rate limiting, audit logging, and the RLS/crypto helpers all read from.
  *
  * Because it's built on `AsyncLocalStorage`, the context automatically

@@ -122,7 +122,7 @@ export function requirePermission<Req extends MinimalRequest = MinimalRequest>(
  * impossible for this helper to construct a subject scoped to a tenant
  * other than the one already active for the request (e.g. from a stale or
  * forged `req.tenantId`-style field), because the tenant always comes from
- * {@link https://github.com/NovaVey/multi-tenant-security-kit#tenant | the tenant context}
+ * {@link https://github.com/NovaVey/Multi-Tenant-Security-Kit#tenant | the tenant context}
  * set up by `createTenantMiddleware` earlier in the pipeline.
  *
  * @throws {TenantContextError} if no tenant context is active when the resolver runs.

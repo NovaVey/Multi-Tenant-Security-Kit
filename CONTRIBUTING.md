@@ -11,7 +11,7 @@ Thanks for your interest in contributing to `@novavey/multi-tenant-security-kit`
 ## Local setup
 
 ```sh
-git clone https://github.com/NovaVey/multi-tenant-security-kit.git
+git clone https://github.com/NovaVey/Multi-Tenant-Security-Kit.git
 cd multi-tenant-security-kit
 npm install
 ```
