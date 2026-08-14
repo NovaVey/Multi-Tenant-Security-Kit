@@ -77,10 +77,16 @@ export class AuditLogger {
    *    platform-level actions).
    *
    * If `redact` was configured, it runs once on the fully-resolved event
-   * before any sink sees it. Every sink then receives the same event; a
-   * sink that throws synchronously or returns a rejected promise has its
-   * error wrapped in {@link AuditSinkError} and handed to `onSinkError` —
-   * this method itself never throws and never returns a rejected promise.
+   * before any sink sees it. Every sink then receives the same redacted
+   * event; a sink that throws synchronously or returns a rejected promise
+   * has its error wrapped in {@link AuditSinkError} and handed to
+   * `onSinkError` — this method itself never throws and never returns a
+   * rejected promise. A throwing `redact` gets the same treatment (also
+   * reported via `onSinkError`), but the event is *not* written to any
+   * sink in that case — falling back to the unredacted event would defeat
+   * the entire purpose of configuring `redact` in the first place, so a
+   * broken redact function fails closed (drops the event) rather than
+   * open (leaks whatever it was supposed to strip).
    */
   log(event: AuditEventInput): void {
     const { tenantId: explicitTenantId, ...rest } = { ...this.defaults, ...event };
@@ -90,7 +96,18 @@ export class AuditLogger {
       timestamp: new Date().toISOString(),
       ...(tenantId !== undefined ? { tenantId } : {}),
     };
-    const finalEvent = this.redact ? this.redact(resolvedEvent) : resolvedEvent;
+
+    let finalEvent: AuditEvent;
+    if (this.redact) {
+      try {
+        finalEvent = this.redact(resolvedEvent);
+      } catch (cause) {
+        this.reportError('redact', cause);
+        return;
+      }
+    } else {
+      finalEvent = resolvedEvent;
+    }
 
     for (const sink of this.sinks) {
       this.writeToSink(sink, finalEvent);
@@ -124,17 +141,23 @@ export class AuditLogger {
       const result = sink.write(event);
       if (result instanceof Promise) {
         result.catch((cause: unknown) => {
-          this.reportSinkError(sink, cause);
+          this.reportError(sink.constructor.name, cause);
         });
       }
     } catch (cause) {
-      this.reportSinkError(sink, cause);
+      this.reportError(sink.constructor.name, cause);
     }
   }
 
-  private reportSinkError(sink: AuditSink, cause: unknown): void {
-    const sinkName = sink.constructor.name;
-    const error = new AuditSinkError(sinkName, { cause });
+  /**
+   * Reports a failure from either a sink's `write` (via {@link writeToSink})
+   * or a throwing `redact` (via {@link log}) through `onSinkError`, wrapped
+   * in an {@link AuditSinkError} named after whichever one failed —
+   * `sourceName` is a real sink's class name for a sink failure, or the
+   * literal string `'redact'` for a redact failure.
+   */
+  private reportError(sourceName: string, cause: unknown): void {
+    const error = new AuditSinkError(sourceName, { cause });
     try {
       this.onSinkError(error);
     } catch {

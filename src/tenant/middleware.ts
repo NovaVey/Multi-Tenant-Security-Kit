@@ -1,4 +1,3 @@
-import { InvalidTenantIdError } from '../errors.js';
 import type { MinimalRequest, MinimalResponse, Middleware, NextFunction } from '../http/types.js';
 import { runWithTenant } from './context.js';
 import type { TenantContext } from './types.js';
@@ -22,6 +21,15 @@ export type TenantResolver<Req extends MinimalRequest = MinimalRequest> = (
  */
 export const DEFAULT_TENANT_ID_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/;
 
+/**
+ * Why {@link TenantMiddlewareOptions.onMissing} is running: no resolver
+ * produced a tenant at all (`'missing'`), or one was resolved but rejected
+ * by `validateTenantId` (`'invalid'`) — present alongside the
+ * resolved-but-rejected id itself, so a custom handler can log or branch on
+ * it without receiving it wrapped in a thrown error.
+ */
+export type TenantMissingInfo = { reason: 'missing' } | { reason: 'invalid'; tenantId: string };
+
 export interface TenantMiddlewareOptions<Req extends MinimalRequest = MinimalRequest> {
   /** Determines the tenant for each request. See the `*TenantResolver` helpers below for common strategies. */
   resolver: TenantResolver<Req>;
@@ -33,12 +41,14 @@ export interface TenantMiddlewareOptions<Req extends MinimalRequest = MinimalReq
    */
   validateTenantId?: (tenantId: string) => boolean;
   /**
-   * Called when no tenant could be resolved (or it failed validation).
-   * Defaults to responding `400 { error: "tenant_required" }`. Set this to
-   * implement e.g. a public/marketing-site fallback that skips tenant
-   * scoping entirely by calling `next()` without resolving a tenant.
+   * Called when no tenant could be resolved, *or* one was resolved but
+   * failed `validateTenantId` — `info.reason` distinguishes the two, and
+   * `info.tenantId` carries the rejected value for the `'invalid'` case.
+   * Defaults to responding `400 { error: "tenant_required" | "invalid_tenant" }`.
+   * Set this to implement e.g. a public/marketing-site fallback that skips
+   * tenant scoping entirely by calling `next()` without resolving a tenant.
    */
-  onMissing?: (req: Req, res: MinimalResponse, next: NextFunction) => void;
+  onMissing?: (req: Req, res: MinimalResponse, next: NextFunction, info: TenantMissingInfo) => void;
 }
 
 /**
@@ -58,22 +68,27 @@ export function createTenantMiddleware<Req extends MinimalRequest = MinimalReque
     options.validateTenantId ?? ((id: string) => DEFAULT_TENANT_ID_PATTERN.test(id));
   const onMissing =
     options.onMissing ??
-    ((_req: Req, res: MinimalResponse, _next: NextFunction) => {
-      res.status(400).json({
-        error: 'tenant_required',
-        message: 'No tenant could be resolved for this request.',
-      });
+    ((_req: Req, res: MinimalResponse, _next: NextFunction, info: TenantMissingInfo) => {
+      res.status(400).json(
+        info.reason === 'invalid'
+          ? { error: 'invalid_tenant', message: 'The resolved tenant id failed validation.' }
+          : {
+              error: 'tenant_required',
+              message: 'No tenant could be resolved for this request.',
+            },
+      );
     });
 
   return (req, res, next) => {
     void (async () => {
       try {
         const context = await options.resolver(req);
-        if (!context || !validateTenantId(context.tenantId)) {
-          if (context && !validateTenantId(context.tenantId)) {
-            throw new InvalidTenantIdError(context.tenantId);
-          }
-          onMissing(req, res, next);
+        if (!context) {
+          onMissing(req, res, next, { reason: 'missing' });
+          return;
+        }
+        if (!validateTenantId(context.tenantId)) {
+          onMissing(req, res, next, { reason: 'invalid', tenantId: context.tenantId });
           return;
         }
         runWithTenant(context, () => next());

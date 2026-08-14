@@ -25,5 +25,6 @@ export {
 export type {
   TenantResolver,
   TenantMiddlewareOptions,
+  TenantMissingInfo,
   SubdomainTenantResolverOptions,
 } from './middleware.js';

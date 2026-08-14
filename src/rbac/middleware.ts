@@ -57,10 +57,20 @@ function defaultOnDenied<Req extends MinimalRequest>(
  * The subject is resolved fresh per-request via `getSubject` (rather than
  * being fixed at middleware-construction time) so the same middleware
  * instance can be reused across every request while still reflecting
- * each caller's actual roles. A subject that fails to resolve is treated
- * as a denial rather than an exception, since "we don't know who this is"
- * and "we know who this is and they're not allowed" should both result in
- * the same safe-by-default outcome for callers of this middleware.
+ * each caller's actual roles. A `getSubject` that *resolves* to `undefined`
+ * (e.g. "no valid session") is treated as a denial via `onDenied`, the same
+ * as a real permission failure — "we don't know who this is" and "we know
+ * who this is and they're not allowed" both result in the same
+ * safe-by-default outcome.
+ *
+ * A `getSubject` that *throws*, on the other hand, is deliberately **not**
+ * treated as a denial — it's forwarded to `next(err)` like any other
+ * unexpected error. Collapsing a thrown error (e.g. a downstream
+ * auth/session service being unreachable) into an ordinary 403 denial
+ * would hide a real outage behind what looks like a routine access-control
+ * response, including in any monitoring built on `onDenied`. If you want
+ * failures from your own `getSubject` treated as a denial instead of an
+ * exception, catch them yourself and resolve to `undefined`.
  */
 export function requirePermission<Req extends MinimalRequest = MinimalRequest>(
   options: RequirePermissionOptions<Req>,

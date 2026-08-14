@@ -89,10 +89,13 @@ By default, resolved tenant ids are validated against
 `/^[a-zA-Z0-9_-]{1,64}$/` — deliberately strict, since this value often flows
 into SQL identifiers, cache keys, and file paths downstream (see the [RLS
 module](./row-level-security.md) for where that matters most). Override with
-`validateTenantId`. When no tenant resolves (or validation fails), the
-default behavior is `400 { error: "tenant_required" }`; override `onMissing`
+`validateTenantId`. When no tenant resolves, or one resolves but fails
+validation, `onMissing` runs — its `info.reason` (`'missing'` or
+`'invalid'`) tells you which, and `info.tenantId` carries the rejected value
+for the `'invalid'` case. The default behavior for both is
+`400 { error: "tenant_required" | "invalid_tenant" }`; override `onMissing`
 to implement e.g. a public/marketing-site fallback that calls `next()`
-without a tenant.
+without a tenant, or to log the rejected value yourself.
 
 ### Background jobs and non-HTTP entry points
 
