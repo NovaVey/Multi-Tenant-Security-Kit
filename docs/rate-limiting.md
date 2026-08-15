@@ -23,6 +23,13 @@ const limiter = new TenantRateLimiter({
 app.use(createRateLimitMiddleware({ limiter }));
 ```
 
+`limit` and `windowMs` must both be positive, finite numbers — the
+constructor throws `RateLimitConfigurationError` otherwise. This isn't just
+strictness for its own sake: every store computes refill as `limit /
+windowMs`, so a `windowMs` of `0` produces an infinite refill rate and
+silently disables rate limiting entirely (every bucket refills to full
+capacity between any two calls, no matter how little time actually passed).
+
 Mount this after [`createTenantMiddleware`](./tenant-isolation.md) (unless
 you supply your own `getTenantId`) — by default the middleware resolves the
 tenant via `requireCurrentTenantId()`.
@@ -131,6 +138,12 @@ with an actual upstream authentication/allowlist layer — bounding memory
 doesn't stop an attacker from thrashing legitimate tenants' buckets out of
 the cache by flooding fake keys, it only caps how much memory that costs.
 
+`maxBuckets` must be a positive integer — the constructor throws
+`RateLimitConfigurationError` otherwise. `maxBuckets: 0` in particular isn't
+just an odd value: every `consume()` call would insert a bucket and then
+immediately evict it as the sole (hence "oldest") entry, so no state ever
+persists and the limiter goes fully inert.
+
 For multi-instance deployments, implement the small `RateLimitStore`
 interface against a shared backend (Redis is the natural choice) and pass it
 to `TenantRateLimiter`:
@@ -170,17 +183,18 @@ interface is a small, explicit choice you make, not something bundled in.
 
 ## API reference
 
-| Export                               | Kind      | Summary                                                                                    |
-| ------------------------------------ | --------- | ------------------------------------------------------------------------------------------ |
-| `RateLimitResult`                    | type      | `{ allowed, remaining, limit, resetMs }`                                                   |
-| `RateLimitStore`                     | interface | `consume(key, points, limit, windowMs)`; optional `reset(key)`                             |
-| `MemoryRateLimitStore`               | class     | Default in-memory, process-local store                                                     |
-| `MemoryRateLimitStoreOptions`        | type      | `{ maxBuckets? }` — LRU-eviction cap, default `50_000`                                     |
-| `TenantRateLimiterOptions`           | type      | `{ store?, limit, windowMs, keyPrefix? }`                                                  |
-| `TenantRateLimiter`                  | class     | `new TenantRateLimiter(options)`; `.consume(tenantId, points?)`                            |
-| `RateLimitMiddlewareOptions<Req>`    | type      | Options for `createRateLimitMiddleware`                                                    |
-| `createRateLimitMiddleware(options)` | function  | Builds the enforcement middleware                                                          |
-| `assertNotRateLimited(result)`       | function  | Throws `RateLimitExceededError` if `!result.allowed`, for non-HTTP call sites              |
-| `SecurityKitError`                   | class     | Base class every error in this package extends; carries a stable `.code`                   |
-| `RateLimitExceededError`             | class     | Thrown by `assertNotRateLimited()`; `code: 'RATE_LIMIT_EXCEEDED'`, carries `.retryAfterMs` |
-| `InvalidRateLimitPointsError`        | class     | Thrown by `.consume()` if `points` isn't a positive, finite number                         |
+| Export                               | Kind      | Summary                                                                                                                                            |
+| ------------------------------------ | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RateLimitResult`                    | type      | `{ allowed, remaining, limit, resetMs }`                                                                                                           |
+| `RateLimitStore`                     | interface | `consume(key, points, limit, windowMs)`; optional `reset(key)`                                                                                     |
+| `MemoryRateLimitStore`               | class     | Default in-memory, process-local store                                                                                                             |
+| `MemoryRateLimitStoreOptions`        | type      | `{ maxBuckets? }` — LRU-eviction cap, default `50_000`                                                                                             |
+| `TenantRateLimiterOptions`           | type      | `{ store?, limit, windowMs, keyPrefix? }`                                                                                                          |
+| `TenantRateLimiter`                  | class     | `new TenantRateLimiter(options)`; `.consume(tenantId, points?)`                                                                                    |
+| `RateLimitMiddlewareOptions<Req>`    | type      | Options for `createRateLimitMiddleware`                                                                                                            |
+| `createRateLimitMiddleware(options)` | function  | Builds the enforcement middleware                                                                                                                  |
+| `assertNotRateLimited(result)`       | function  | Throws `RateLimitExceededError` if `!result.allowed`, for non-HTTP call sites                                                                      |
+| `SecurityKitError`                   | class     | Base class every error in this package extends; carries a stable `.code`                                                                           |
+| `RateLimitExceededError`             | class     | Thrown by `assertNotRateLimited()`; `code: 'RATE_LIMIT_EXCEEDED'`, carries `.retryAfterMs`                                                         |
+| `InvalidRateLimitPointsError`        | class     | Thrown by `.consume()` if `points` isn't a positive, finite number                                                                                 |
+| `RateLimitConfigurationError`        | class     | Thrown if `limit`/`windowMs` (`TenantRateLimiter`) or `maxBuckets` (`MemoryRateLimitStore`) is invalid; `code: 'RATE_LIMIT_CONFIGURATION_INVALID'` |

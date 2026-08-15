@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { RateLimitConfigurationError, SecurityKitError } from '../../src/errors.js';
 import { MemoryRateLimitStore } from '../../src/rate-limit/memory-store.js';
 
 describe('MemoryRateLimitStore', () => {
@@ -222,6 +223,52 @@ describe('MemoryRateLimitStore', () => {
 
       const result = await store.consume('a', 1, 5, 1000);
       expect(result.remaining).toBe(1); // 5 - 4 real consumes
+    });
+
+    // Regression (HIGH): maxBuckets was never validated. maxBuckets: 0 in
+    // particular isn't just an odd config value — every consume() call for
+    // a key inserts its bucket, then immediately evicts it as the (sole,
+    // hence "oldest") entry, so state never persists and the limiter is
+    // fully inert. Verified live before this fix: ten consecutive
+    // full-bucket-cost requests for the same key all succeeded, and
+    // store.size stayed at 0 throughout.
+    describe('invalid maxBuckets', () => {
+      for (const maxBuckets of [0, -1, -100, 1.5, NaN, Infinity, -Infinity]) {
+        it(`rejects maxBuckets = ${maxBuckets} with RateLimitConfigurationError`, () => {
+          expect(() => new MemoryRateLimitStore({ maxBuckets })).toThrow(
+            RateLimitConfigurationError,
+          );
+        });
+      }
+
+      it('maxBuckets = 0 is rejected before the bypass can ever occur (real end-to-end check)', async () => {
+        expect(() => new MemoryRateLimitStore({ maxBuckets: 0 })).toThrow(
+          RateLimitConfigurationError,
+        );
+      });
+
+      it('the thrown error is a SecurityKitError with a stable code', () => {
+        try {
+          new MemoryRateLimitStore({ maxBuckets: 0 });
+          expect.unreachable('constructor should have thrown');
+        } catch (err) {
+          expect(err).toBeInstanceOf(RateLimitConfigurationError);
+          expect(err).toBeInstanceOf(SecurityKitError);
+          expect((err as RateLimitConfigurationError).code).toBe(
+            'RATE_LIMIT_CONFIGURATION_INVALID',
+          );
+        }
+      });
+
+      it('accepts a valid maxBuckets (sanity check the validation is not overly strict)', () => {
+        expect(() => new MemoryRateLimitStore({ maxBuckets: 1 })).not.toThrow();
+        expect(() => new MemoryRateLimitStore({ maxBuckets: 100_000 })).not.toThrow();
+      });
+
+      it('the default (no maxBuckets option) still constructs without throwing', () => {
+        expect(() => new MemoryRateLimitStore()).not.toThrow();
+        expect(() => new MemoryRateLimitStore({})).not.toThrow();
+      });
     });
   });
 });

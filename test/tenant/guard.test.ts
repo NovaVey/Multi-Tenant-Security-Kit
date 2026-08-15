@@ -34,13 +34,41 @@ describe('assertTenantMatches', () => {
 
   it('passes when the resource belongs to the current tenant', () => {
     runWithTenant({ tenantId: 'acme' }, () => {
-      expect(() => assertTenantMatches({ tenantId: 'acme', name: 'invoice-1' })).not.toThrow();
+      expect(() => assertTenantMatches({ tenantId: 'acme' })).not.toThrow();
     });
   });
 
   it("blocks access to another tenant's resource", () => {
     runWithTenant({ tenantId: 'acme' }, () => {
       expect(() => assertTenantMatches({ tenantId: 'globex' })).toThrow(CrossTenantAccessError);
+    });
+  });
+
+  // Regression (HIGH, compile-time): assertTenantMatches used to take
+  // TenantScoped directly, which carries an index signature (needed so
+  // scopeToTenant, below, can accept a plain object literal). TypeScript
+  // only lets a *declared* type (a named interface/class — exactly what a
+  // real ORM model or domain type is) satisfy a target type that has an
+  // index signature if the declared type also has a matching one, and real
+  // domain types essentially never do — the same footgun this package
+  // already hit once for MinimalRequest (see src/http/types.ts and
+  // test/tenant/middleware.test.ts / test/rbac/middleware.test.ts's own
+  // guards for that one). This test's only job is to fail `npm run
+  // typecheck` if that regresses: a named interface with EXTRA fields
+  // beyond tenantId, passed with no cast, must compile.
+  it('accepts a named interface (not just a fresh object literal) with no cast', () => {
+    interface Invoice {
+      id: string;
+      tenantId: string;
+      amountCents: number;
+    }
+    const invoice: Invoice = { id: 'inv-1', tenantId: 'acme', amountCents: 4200 };
+
+    runWithTenant({ tenantId: 'acme' }, () => {
+      expect(() => assertTenantMatches(invoice)).not.toThrow();
+    });
+    runWithTenant({ tenantId: 'globex' }, () => {
+      expect(() => assertTenantMatches(invoice)).toThrow(CrossTenantAccessError);
     });
   });
 });
@@ -50,6 +78,12 @@ describe('scopeToTenant', () => {
     expect(() => scopeToTenant({ status: 'open' })).toThrow(TenantContextError);
   });
 
+  // This (and every other call below passing a fresh `{ ... }` literal) is
+  // also a compile-time regression guard, the other half of the tension
+  // assertTenantMatches's own regression test above documents: scopeToTenant
+  // needs TenantScoped's index signature to accept a plain object literal
+  // like this one — the fix for assertTenantMatches deliberately did NOT
+  // touch TenantScoped itself, specifically so this keeps compiling.
   it('injects the current tenant id into the query', () => {
     runWithTenant({ tenantId: 'acme' }, () => {
       expect(scopeToTenant({ status: 'open' })).toEqual({ status: 'open', tenantId: 'acme' });

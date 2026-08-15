@@ -1,4 +1,4 @@
-import { InvalidRateLimitPointsError } from '../errors.js';
+import { InvalidRateLimitPointsError, RateLimitConfigurationError } from '../errors.js';
 import { MemoryRateLimitStore } from './memory-store.js';
 import type { RateLimitResult, RateLimitStore } from './types.js';
 
@@ -36,7 +36,28 @@ export class TenantRateLimiter {
   private readonly windowMs: number;
   private readonly keyPrefix: string;
 
+  /**
+   * @throws {RateLimitConfigurationError} if `limit` or `windowMs` isn't a
+   * positive, finite number. A non-positive `windowMs` in particular isn't
+   * just an odd config value — every store computes refill as `limit /
+   * windowMs`, so `windowMs: 0` produces an infinite refill rate and
+   * silently disables rate limiting entirely (verified: a bucket refills to
+   * full capacity between any two calls, no matter how little time actually
+   * passed). Validated once here, at construction, rather than left to
+   * misbehave unpredictably deep inside whichever `RateLimitStore` is in
+   * use.
+   */
   constructor(options: TenantRateLimiterOptions) {
+    if (!Number.isFinite(options.limit) || options.limit <= 0) {
+      throw new RateLimitConfigurationError(
+        `Invalid limit: ${JSON.stringify(options.limit)}. Must be a positive, finite number.`,
+      );
+    }
+    if (!Number.isFinite(options.windowMs) || options.windowMs <= 0) {
+      throw new RateLimitConfigurationError(
+        `Invalid windowMs: ${JSON.stringify(options.windowMs)}. Must be a positive, finite number.`,
+      );
+    }
     this.store = options.store ?? new MemoryRateLimitStore();
     this.limit = options.limit;
     this.windowMs = options.windowMs;

@@ -3,6 +3,6 @@ export { EnvKeyProvider, StaticKeyProvider, TenantEncryptor } from './tenant-key
 export type { TenantEncryptorOptions } from './tenant-keys.js';
 
 // Re-exported so consumers importing only this subpath can catch/narrow on
-// the error type `TenantEncryptor.decrypt()` throws, without also importing
-// from the package root.
-export { SecurityKitError, DecryptionError } from '../errors.js';
+// the error types this module's own functions throw, without also
+// importing from the package root.
+export { SecurityKitError, DecryptionError, InvalidKeyError } from '../errors.js';

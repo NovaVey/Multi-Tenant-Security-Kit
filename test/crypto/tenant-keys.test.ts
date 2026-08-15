@@ -1,14 +1,28 @@
 import { describe, expect, it } from 'vitest';
 
-import { DecryptionError } from '../../src/errors.js';
+import { DecryptionError, InvalidKeyError, SecurityKitError } from '../../src/errors.js';
 import { EnvKeyProvider, StaticKeyProvider, TenantEncryptor } from '../../src/crypto/index.js';
 import type { EncryptedPayload } from '../../src/crypto/index.js';
 
 const MASTER_SECRET = 'a-sufficiently-long-master-secret-for-testing';
 
 describe('EnvKeyProvider', () => {
-  it('throws TypeError when the master secret is shorter than 16 bytes', () => {
-    expect(() => new EnvKeyProvider('short')).toThrow(TypeError);
+  // Regression (HIGH): this used to be a plain TypeError, breaking this
+  // package's "every error extends SecurityKitError" guarantee.
+  it('throws InvalidKeyError when the master secret is shorter than 16 bytes', () => {
+    expect(() => new EnvKeyProvider('short')).toThrow(InvalidKeyError);
+  });
+
+  it('InvalidKeyError from a too-short master secret extends SecurityKitError and carries actualLength', () => {
+    try {
+      new EnvKeyProvider('short');
+      expect.unreachable();
+    } catch (err) {
+      expect(err).toBeInstanceOf(SecurityKitError);
+      const error = err as InvalidKeyError;
+      expect(error.code).toBe('INVALID_KEY');
+      expect(error.actualLength).toBe(5); // 'short'.length
+    }
   });
 
   it('accepts a master secret of exactly 16 bytes', () => {
@@ -19,8 +33,8 @@ describe('EnvKeyProvider', () => {
     expect(() => new EnvKeyProvider(Buffer.from(MASTER_SECRET, 'utf8'))).not.toThrow();
   });
 
-  it('throws TypeError for a too-short Buffer master secret', () => {
-    expect(() => new EnvKeyProvider(Buffer.from('tiny'))).toThrow(TypeError);
+  it('throws InvalidKeyError for a too-short Buffer master secret', () => {
+    expect(() => new EnvKeyProvider(Buffer.from('tiny'))).toThrow(InvalidKeyError);
   });
 
   it('derives a 32-byte key for a tenant', () => {
@@ -183,26 +197,83 @@ describe('TenantEncryptor', () => {
     );
   });
 
-  it('throws TypeError when the KeyProvider returns a key that is too short', async () => {
+  // Regression (HIGH): this used to be a plain TypeError, breaking this
+  // package's "every error extends SecurityKitError" guarantee — and this
+  // path is reachable through the documented KeyProvider extension point
+  // (a real KMS integration returning a malformed key), not just a
+  // hypothetical misuse.
+  it('throws InvalidKeyError when the KeyProvider returns a key that is too short', async () => {
     const badProvider = { getDataKey: () => Buffer.alloc(16) };
     const encryptor = new TenantEncryptor({ keyProvider: badProvider });
-    await expect(encryptor.encrypt('tenant-a', 'data')).rejects.toThrow(TypeError);
+    await expect(encryptor.encrypt('tenant-a', 'data')).rejects.toThrow(InvalidKeyError);
   });
 
-  it('throws TypeError when the KeyProvider returns a key that is too long', async () => {
+  it('throws InvalidKeyError when the KeyProvider returns a key that is too long', async () => {
     const badProvider = { getDataKey: () => Buffer.alloc(64) };
     const encryptor = new TenantEncryptor({ keyProvider: badProvider });
-    await expect(encryptor.encrypt('tenant-a', 'data')).rejects.toThrow(TypeError);
+    await expect(encryptor.encrypt('tenant-a', 'data')).rejects.toThrow(InvalidKeyError);
   });
 
-  it('throws TypeError on decrypt when the KeyProvider returns a wrong-length key', async () => {
+  it('InvalidKeyError from a wrong-length KeyProvider key extends SecurityKitError and carries actualLength', async () => {
+    const badProvider = { getDataKey: () => Buffer.alloc(10) };
+    const encryptor = new TenantEncryptor({ keyProvider: badProvider });
+    try {
+      await encryptor.encrypt('tenant-a', 'data');
+      expect.unreachable();
+    } catch (err) {
+      expect(err).toBeInstanceOf(SecurityKitError);
+      const error = err as InvalidKeyError;
+      expect(error.code).toBe('INVALID_KEY');
+      expect(error.actualLength).toBe(10);
+    }
+  });
+
+  it('throws InvalidKeyError on decrypt when the KeyProvider returns a wrong-length key', async () => {
     const goodProvider = new EnvKeyProvider(MASTER_SECRET);
     const encryptor = new TenantEncryptor({ keyProvider: goodProvider });
     const payload = await encryptor.encrypt('tenant-a', 'data');
 
     const badProvider = { getDataKey: () => Buffer.alloc(10) };
     const badEncryptor = new TenantEncryptor({ keyProvider: badProvider });
-    await expect(badEncryptor.decrypt('tenant-a', payload)).rejects.toThrow(TypeError);
+    await expect(badEncryptor.decrypt('tenant-a', payload)).rejects.toThrow(InvalidKeyError);
+  });
+
+  // Regression (HIGH): decrypt() never validated the decoded authTag's
+  // length before calling decipher.setAuthTag() — node:crypto itself
+  // accepts any NIST SP 800-38D-legal GCM tag length (4-16 bytes), so a
+  // caller-supplied EncryptedPayload with a truncated tag was authenticated
+  // at far weaker odds than the 128 bits this module documents (a 4-byte
+  // tag is ~1-in-4-billion, not ~1-in-2^128). EncryptedPayload is explicitly
+  // documented as "trivially JSON-serializable... safe to store as
+  // JSON/columns", i.e. designed to cross a storage/serialization boundary
+  // an attacker could influence.
+  it('throws DecryptionError when authTag is truncated to a shorter GCM-legal length (4 bytes)', async () => {
+    const encryptor = new TenantEncryptor({ keyProvider: new EnvKeyProvider(MASTER_SECRET) });
+    const payload = await encryptor.encrypt('tenant-a', 'secret data');
+    const truncated: EncryptedPayload = {
+      ...payload,
+      authTag: Buffer.from(payload.authTag, 'base64').subarray(0, 4).toString('base64'),
+    };
+    await expect(encryptor.decrypt('tenant-a', truncated)).rejects.toThrow(DecryptionError);
+  });
+
+  it('throws DecryptionError when authTag is empty', async () => {
+    const encryptor = new TenantEncryptor({ keyProvider: new EnvKeyProvider(MASTER_SECRET) });
+    const payload = await encryptor.encrypt('tenant-a', 'secret data');
+    const empty: EncryptedPayload = { ...payload, authTag: '' };
+    await expect(encryptor.decrypt('tenant-a', empty)).rejects.toThrow(DecryptionError);
+  });
+
+  it('throws DecryptionError when authTag is longer than 16 bytes', async () => {
+    const encryptor = new TenantEncryptor({ keyProvider: new EnvKeyProvider(MASTER_SECRET) });
+    const payload = await encryptor.encrypt('tenant-a', 'secret data');
+    const extended: EncryptedPayload = {
+      ...payload,
+      authTag: Buffer.concat([Buffer.from(payload.authTag, 'base64'), Buffer.alloc(4)]).toString(
+        'base64',
+      ),
+    };
+    await expect(encryptor.decrypt('tenant-a', extended)).rejects.toThrow(DecryptionError);
   });
 
   it('supports an async KeyProvider (getDataKey returning a Promise<Buffer>)', async () => {

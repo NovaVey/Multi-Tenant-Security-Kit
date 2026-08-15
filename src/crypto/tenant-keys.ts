@@ -1,12 +1,13 @@
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto';
 
-import { DecryptionError } from '../errors.js';
+import { DecryptionError, InvalidKeyError } from '../errors.js';
 import type { EncryptedPayload, KeyProvider } from './types.js';
 
 /** AES-256-GCM: 32-byte key, 12-byte IV, 16-byte auth tag. */
 const ALGORITHM = 'aes-256-gcm';
 const KEY_LENGTH_BYTES = 32;
 const IV_LENGTH_BYTES = 12;
+const AUTH_TAG_LENGTH_BYTES = 16;
 
 /**
  * {@link KeyProvider} that derives an independent 256-bit key per tenant
@@ -36,14 +37,15 @@ export class EnvKeyProvider implements KeyProvider {
    * shorter is almost certainly a placeholder or typo, not a real secret
    * pulled from a secrets manager, so it's rejected up front rather than
    * silently producing weak-in-practice derived keys.
-   * @throws {TypeError} if the resulting buffer is shorter than 16 bytes.
+   * @throws {InvalidKeyError} if the resulting buffer is shorter than 16 bytes.
    */
   constructor(masterSecret: string | Buffer) {
     const buffer = Buffer.isBuffer(masterSecret) ? masterSecret : Buffer.from(masterSecret, 'utf8');
     if (buffer.length < 16) {
-      throw new TypeError(
+      throw new InvalidKeyError(
         `EnvKeyProvider master secret is too short (${buffer.length} bytes; need at least 16). ` +
           'This looks like a placeholder, not a real master secret.',
+        buffer.length,
       );
     }
     this.masterSecret = buffer;
@@ -132,8 +134,8 @@ export class TenantEncryptor {
    * resulting payload will fail unless the exact same `aad` is supplied,
    * which lets callers cryptographically bind a ciphertext to a specific
    * context and detect if it's ever moved/replayed elsewhere.
-   * @throws {TypeError} if the key returned by the `KeyProvider` is not
-   * exactly 32 bytes.
+   * @throws {InvalidKeyError} if the key returned by the `KeyProvider` is
+   * not exactly 32 bytes.
    */
   async encrypt(
     tenantId: string,
@@ -170,14 +172,19 @@ export class TenantEncryptor {
    * @param payload The `{ ciphertext, iv, authTag }` produced by `encrypt`.
    * @param aad Must exactly match the `aad` (or lack thereof) passed to the
    * original `encrypt` call.
-   * @throws {TypeError} if the key returned by the `KeyProvider` is not
-   * exactly 32 bytes.
+   * @throws {InvalidKeyError} if the key returned by the `KeyProvider` is
+   * not exactly 32 bytes.
    * @throws {DecryptionError} if decryption fails for any reason — wrong
-   * key, tampered ciphertext/authTag, or mismatched `aad`. GCM's built-in
-   * tag verification (inside `decipher.final()`) is what actually detects
-   * this; this method never implements its own tag comparison, since a
-   * hand-rolled comparison is an easy place to introduce a timing side
-   * channel or subtle bug.
+   * key, tampered ciphertext/authTag, a malformed-length `authTag`, or
+   * mismatched `aad`. GCM's built-in tag verification (inside
+   * `decipher.final()`) is what actually detects a tampered tag; this
+   * method never implements its own tag comparison, since a hand-rolled
+   * comparison is an easy place to introduce a timing side channel or
+   * subtle bug. The `authTag` *length* is checked explicitly, though:
+   * `node:crypto` itself accepts any NIST SP 800-38D-legal GCM tag length
+   * (as short as 4 bytes), so without this check a caller-supplied
+   * `EncryptedPayload` with a truncated tag would be authenticated at far
+   * weaker odds than the 128 bits this module documents and callers expect.
    */
   async decrypt(tenantId: string, payload: EncryptedPayload, aad?: Buffer): Promise<Buffer> {
     const key = await this.keyProvider.getDataKey(tenantId);
@@ -185,8 +192,14 @@ export class TenantEncryptor {
 
     try {
       const iv = Buffer.from(payload.iv, 'base64');
+      const authTag = Buffer.from(payload.authTag, 'base64');
+      if (authTag.length !== AUTH_TAG_LENGTH_BYTES) {
+        throw new TypeError(
+          `authTag must be exactly ${AUTH_TAG_LENGTH_BYTES} bytes; got ${authTag.length}.`,
+        );
+      }
       const decipher = createDecipheriv(ALGORITHM, key, iv);
-      decipher.setAuthTag(Buffer.from(payload.authTag, 'base64'));
+      decipher.setAuthTag(authTag);
       if (aad !== undefined) {
         decipher.setAAD(aad);
       }
@@ -206,8 +219,9 @@ export class TenantEncryptor {
  */
 function assertKeyLength(key: Buffer): void {
   if (key.length !== KEY_LENGTH_BYTES) {
-    throw new TypeError(
+    throw new InvalidKeyError(
       `KeyProvider returned a key of length ${key.length}; expected ${KEY_LENGTH_BYTES} bytes.`,
+      key.length,
     );
   }
 }

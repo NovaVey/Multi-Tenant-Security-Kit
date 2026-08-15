@@ -17,6 +17,16 @@ import {
   type RbacPolicy,
 } from '@novavey/multi-tenant-security-kit/rbac';
 
+// "Every example below assigns req.roles ..." augmentation block
+declare global {
+  namespace Express {
+    interface Request {
+      roles?: string[];
+      session?: unknown; // only needed for the Auth.js example below
+    }
+  }
+}
+
 declare const app: express.Express;
 declare const policy: RbacPolicy;
 declare const authConfig: ExpressAuthConfig;
@@ -25,19 +35,19 @@ declare const authConfig: ExpressAuthConfig;
 app.use(async (req, _res, next) => {
   const session = await getSession(req, authConfig);
   const roles = (session as { roles?: unknown } | null)?.roles;
-  (req as express.Request & { roles?: string[] }).roles = Array.isArray(roles)
-    ? (roles as string[])
-    : [];
-  (req as express.Request & { session?: unknown }).session = session;
+  req.roles = Array.isArray(roles) ? (roles as string[]) : [];
+  req.session = session;
   next();
 });
 
 app.use(
   createTenantMiddleware({
-    resolver: claimTenantResolver(
-      (req) => (req as express.Request & { session?: Record<string, unknown> }).session,
-      'tenantId',
-    ),
+    resolver: claimTenantResolver((req) => {
+      const session = req.session;
+      return typeof session === 'object' && session !== null
+        ? (session as Record<string, unknown>)
+        : undefined;
+    }, 'tenantId'),
   }),
 );
 
@@ -46,7 +56,7 @@ app.use(clerkMiddleware()); // must run before getAuth() is called anywhere
 
 app.use((req, _res, next) => {
   const { orgRole } = getAuth(req);
-  (req as express.Request & { roles?: string[] }).roles = orgRole ? [orgRole] : [];
+  req.roles = orgRole ? [orgRole] : [];
   next();
 });
 
@@ -64,9 +74,7 @@ app.use(
 
   app.use((req, _res, next) => {
     const roles = req.auth?.payload?.[`${NAMESPACE}/roles`];
-    (req as express.Request & { roles?: string[] }).roles = Array.isArray(roles)
-      ? (roles as string[])
-      : [];
+    req.roles = Array.isArray(roles) ? (roles as string[]) : [];
     next();
   });
 

@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { InvalidRateLimitPointsError, SecurityKitError } from '../../src/errors.js';
+import {
+  InvalidRateLimitPointsError,
+  RateLimitConfigurationError,
+  SecurityKitError,
+} from '../../src/errors.js';
 import { TenantRateLimiter } from '../../src/rate-limit/limiter.js';
 import { MemoryRateLimitStore } from '../../src/rate-limit/memory-store.js';
 import type { RateLimitResult, RateLimitStore } from '../../src/rate-limit/types.js';
@@ -119,6 +123,58 @@ describe('TenantRateLimiter', () => {
         expect(error.code).toBe('INVALID_RATE_LIMIT_POINTS');
         expect(error.points).toBe(-5);
       }
+    });
+  });
+
+  // Regression (HIGH): limit/windowMs were never validated at construction,
+  // unlike points. A windowMs of 0 in particular isn't just an odd config
+  // value — MemoryRateLimitStore (and, per the RateLimitStore contract, any
+  // conforming store) computes refill as `limit / windowMs`; windowMs = 0
+  // produces an infinite refill rate, so every bucket refills to full
+  // capacity between any two calls no matter how little time actually
+  // passed — a full, silent rate-limit bypass. Verified live before this
+  // fix: draining a bucket fully and consuming again a few ms later still
+  // succeeded, every time.
+  describe('invalid limit/windowMs', () => {
+    for (const limit of [0, -1, -100, NaN, Infinity, -Infinity]) {
+      it(`rejects limit = ${limit} with RateLimitConfigurationError`, () => {
+        expect(() => new TenantRateLimiter({ limit, windowMs: 1000 })).toThrow(
+          RateLimitConfigurationError,
+        );
+      });
+    }
+
+    for (const windowMs of [0, -1, -100, NaN, Infinity, -Infinity]) {
+      it(`rejects windowMs = ${windowMs} with RateLimitConfigurationError`, () => {
+        expect(() => new TenantRateLimiter({ limit: 5, windowMs })).toThrow(
+          RateLimitConfigurationError,
+        );
+      });
+    }
+
+    it('rejects windowMs = 0 before the bypass can ever occur (real end-to-end check)', async () => {
+      // Belt-and-suspenders: prove the specific exploit shape the audit
+      // demonstrated is closed, not just that *a* constructor field is
+      // validated somewhere.
+      expect(() => new TenantRateLimiter({ limit: 5, windowMs: 0 })).toThrow(
+        RateLimitConfigurationError,
+      );
+    });
+
+    it('the thrown error is a SecurityKitError with a stable code', () => {
+      try {
+        new TenantRateLimiter({ limit: 5, windowMs: 0 });
+        expect.unreachable('constructor should have thrown');
+      } catch (err) {
+        expect(err).toBeInstanceOf(RateLimitConfigurationError);
+        expect(err).toBeInstanceOf(SecurityKitError);
+        expect((err as RateLimitConfigurationError).code).toBe('RATE_LIMIT_CONFIGURATION_INVALID');
+      }
+    });
+
+    it('accepts valid limit/windowMs values (sanity check the validation is not overly strict)', () => {
+      expect(() => new TenantRateLimiter({ limit: 1, windowMs: 1 })).not.toThrow();
+      expect(() => new TenantRateLimiter({ limit: 1000, windowMs: 60_000 })).not.toThrow();
     });
   });
 

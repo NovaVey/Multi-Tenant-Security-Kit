@@ -195,6 +195,76 @@ describe('AuditLogger', () => {
     expect((error.cause as Error).message).toBe('async sink failure');
   });
 
+  // Regression (HIGH): writeToSink's error-handling path used to read
+  // `sink.constructor.name` unconditionally to build the AuditSinkError's
+  // sinkName. AuditSink is a structural interface — a valid implementation
+  // doesn't have to be a real `class` instance — so a sink built via
+  // `Object.create(null)` has no `.constructor` at all, and that access
+  // threw a *second*, unhandled TypeError. For a synchronously-throwing
+  // sink that escaped straight out of log(), directly contradicting its
+  // "never throws" guarantee; for an asynchronously-rejecting sink it
+  // became an unhandled promise rejection, which crashes the whole Node
+  // process by default (verified with a real `node -e` invocation of the
+  // built package before this fix, in the audit that found this).
+  it('does not throw when a synchronously-throwing sink has no .constructor (e.g. Object.create(null))', () => {
+    const onSinkError = vi.fn();
+    const protoLessSink: AuditSink = Object.assign(Object.create(null), {
+      write: () => {
+        throw new Error('boom from a proto-less sink');
+      },
+    });
+    const logger = new AuditLogger({ sinks: [protoLessSink], onSinkError });
+
+    expect(() => {
+      logger.log({ action: 'auth.login.succeeded', outcome: 'success' });
+    }).not.toThrow();
+
+    expect(onSinkError).toHaveBeenCalledTimes(1);
+    const [error] = onSinkError.mock.calls[0] as [AuditSinkError];
+    expect(error).toBeInstanceOf(AuditSinkError);
+    expect(error.sinkName).toBe('sink'); // no real class name available — falls back, doesn't throw
+  });
+
+  it('does not throw and still reports via onSinkError when an asynchronously-rejecting sink has no .constructor', async () => {
+    const onSinkError = vi.fn();
+    const protoLessSink: AuditSink = Object.assign(Object.create(null), {
+      write: () => Promise.reject(new Error('async boom from a proto-less sink')),
+    });
+    const logger = new AuditLogger({ sinks: [protoLessSink], onSinkError });
+
+    expect(() => {
+      logger.log({ action: 'auth.login.succeeded', outcome: 'success' });
+    }).not.toThrow();
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(onSinkError).toHaveBeenCalledTimes(1);
+    const [error] = onSinkError.mock.calls[0] as [AuditSinkError];
+    expect(error).toBeInstanceOf(AuditSinkError);
+    expect(error.sinkName).toBe('sink');
+  });
+
+  it('does not throw when a bare null/undefined entry reaches the sinks array', () => {
+    const onSinkError = vi.fn();
+    const goodSink = new InMemoryAuditSink();
+    // Simulates a real-world mistake: a conditional-sink expression (e.g.
+    // `featureFlag ? someSink : undefined`) evaluating to `undefined` and
+    // ending up in the array, rather than being filtered out.
+    const logger = new AuditLogger({
+      sinks: [null as unknown as AuditSink, goodSink],
+      onSinkError,
+    });
+
+    expect(() => {
+      logger.log({ action: 'auth.login.succeeded', outcome: 'success' });
+    }).not.toThrow();
+
+    expect(goodSink.events).toHaveLength(1); // the other sink is unaffected
+    expect(onSinkError).toHaveBeenCalledTimes(1);
+    const [error] = onSinkError.mock.calls[0] as [AuditSinkError];
+    expect(error.sinkName).toBe('sink');
+  });
+
   it('defaults onSinkError to console.error when not provided', () => {
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const logger = new AuditLogger({ sinks: [new ThrowingSink()] });

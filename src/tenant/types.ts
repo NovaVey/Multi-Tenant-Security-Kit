@@ -11,10 +11,15 @@ export interface TenantContext<Extra extends Record<string, unknown> = Record<st
 /**
  * Anything that is scoped to a tenant and can be checked against one.
  *
- * The index signature is deliberate: real domain records (an invoice, a
- * query filter, ...) carry many fields beyond `tenantId`, and this type is
- * meant to be satisfied structurally by them without callers needing to
- * cast or over-narrow their own types.
+ * The index signature is deliberate: it's what lets {@link scopeToTenant}
+ * accept a plain object literal (`scopeToTenant({ status: 'open' })`)
+ * against its `T extends Partial<TenantScoped>` constraint. It comes with a
+ * real cost, though — TypeScript only lets a *declared* type (a named
+ * `Invoice` interface, a Prisma/Drizzle model) satisfy a target type that
+ * has an index signature if the declared type also has a matching one, and
+ * real domain types essentially never do. `assertTenantMatches`
+ * deliberately does NOT take `TenantScoped` directly for this reason — see
+ * its own doc comment in `guard.ts`.
  */
 export interface TenantScoped {
   tenantId: string;
