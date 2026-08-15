@@ -35,6 +35,27 @@ export interface OtelHookOptions {
 // package doesn't need `@opentelemetry/api` as a dependency just to set it.
 const SPAN_STATUS_CODE_ERROR = 2;
 
+/**
+ * Calls `options.getActiveSpan()` and, if it returned a span, that span's
+ * own `spanContext()`, defensively: either call throwing (a malformed or
+ * version-incompatible span/tracer — this module only knows `OtelSpanLike`'s
+ * *shape*, not that any given implementation actually behaves per spec) is
+ * treated the same as no active span at all, rather than escaping to the
+ * caller. Used by {@link traceContextTransform} — see its own doc comment
+ * for why swallowing this particular failure matters more there than it
+ * would look like at a glance.
+ */
+function safeSpanContext(
+  options: OtelHookOptions,
+): { traceId: string; spanId: string } | undefined {
+  try {
+    const span = options.getActiveSpan();
+    return span?.spanContext();
+  } catch {
+    return undefined;
+  }
+}
+
 function eventAttributes(event: AuditEvent): Record<string, string | number | boolean> {
   const attributes: Record<string, string | number | boolean> = { outcome: event.outcome };
   if (event.tenantId !== undefined) attributes.tenantId = event.tenantId;
@@ -89,16 +110,32 @@ export function openTelemetrySink(options: OtelHookOptions): AuditSink {
  * {@link openTelemetrySink}.
  *
  * A no-op — returns `event` unchanged — when `getActiveSpan()` returns
- * `undefined`.
+ * `undefined`, *or* when `getActiveSpan()`/`spanContext()` throws. The
+ * throwing case matters more here than it would for an ordinary sink: this
+ * function is meant to be passed as {@link AuditLoggerOptions.redact}
+ * (see below), and `AuditLogger.log()` treats a throwing `redact` as a
+ * reason to drop the *entire* event — not just skip trace-context
+ * enrichment — since it can't tell a redaction failure from "this
+ * transform doesn't work right now" and has to fail closed either way. A
+ * malformed or version-incompatible span object (this module only knows
+ * `OtelSpanLike`'s shape, not that a given implementation actually honors
+ * it) would otherwise silently take out every audit event for the rest of
+ * that trace, for sinks that have nothing to do with OpenTelemetry at all —
+ * a correctness bug entirely disproportionate to what this transform is
+ * for. {@link openTelemetrySink} never had this failure mode: a throwing
+ * span there only takes out that one sink (isolated by `AuditLogger`
+ * itself), never the whole event.
  *
  * Compose with your own redaction if you need both:
  * `redact: (event) => myRedact(traceContextTransform(options)(event))`.
  */
 export function traceContextTransform(options: OtelHookOptions): (event: AuditEvent) => AuditEvent {
   return (event: AuditEvent): AuditEvent => {
-    const span = options.getActiveSpan();
-    if (!span) return event;
-    const { traceId, spanId } = span.spanContext();
-    return { ...event, metadata: { ...event.metadata, traceId, spanId } };
+    const spanContext = safeSpanContext(options);
+    if (!spanContext) return event;
+    return {
+      ...event,
+      metadata: { ...event.metadata, traceId: spanContext.traceId, spanId: spanContext.spanId },
+    };
   };
 }

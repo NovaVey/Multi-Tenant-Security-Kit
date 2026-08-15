@@ -135,4 +135,70 @@ describe('traceContextTransform', () => {
 
     expect(events[0]?.metadata).toEqual({ traceId: 't-1', spanId: 's-1' });
   });
+
+  // Regression (MEDIUM): a throwing getActiveSpan()/spanContext() used to
+  // propagate straight out of the returned function. That's tolerable for
+  // an ordinary sink (AuditLogger isolates each sink's own failure), but
+  // catastrophic for this function specifically, since it's meant to be
+  // used as `redact` — and AuditLogger.log() treats a throwing `redact` as
+  // a reason to drop the *entire* event, not just skip trace-context
+  // enrichment. A malformed or version-incompatible span (this module only
+  // knows OtelSpanLike's shape, not that any given implementation actually
+  // honors it) used to silently take out every audit event for the rest of
+  // that trace, for sinks that have nothing to do with OpenTelemetry at
+  // all. Must now degrade to a no-op passthrough, the same as "no active
+  // span at all".
+  describe('degrades to a no-op on a throwing span (does not drop the event)', () => {
+    it('when getActiveSpan() itself throws', () => {
+      const transform = traceContextTransform({
+        getActiveSpan: () => {
+          throw new Error('tracer not initialized');
+        },
+      });
+      const event = fakeEvent();
+
+      expect(() => transform(event)).not.toThrow();
+      expect(transform(event)).toBe(event);
+    });
+
+    it('when span.spanContext() throws', () => {
+      const brokenSpan: OtelSpanLike = {
+        ...fakeSpan(),
+        spanContext: vi.fn(() => {
+          throw new Error('span already ended');
+        }),
+      };
+      const transform = traceContextTransform({ getActiveSpan: () => brokenSpan });
+      const event = fakeEvent();
+
+      expect(() => transform(event)).not.toThrow();
+      expect(transform(event)).toBe(event);
+    });
+
+    it('as AuditLoggerOptions.redact: a throwing span degrades to logging the unenriched event, not dropping it', () => {
+      const events: AuditEvent[] = [];
+      const onSinkError = vi.fn();
+      const logger = new AuditLogger({
+        sinks: [
+          {
+            write: (e) => {
+              events.push(e);
+            },
+          },
+        ],
+        onSinkError,
+        redact: traceContextTransform({
+          getActiveSpan: () => {
+            throw new Error('tracer not initialized');
+          },
+        }),
+      });
+
+      logger.log({ action: 'auth.login.succeeded', outcome: 'success' });
+
+      expect(events).toHaveLength(1);
+      expect(events[0]?.metadata).toBeUndefined();
+      expect(onSinkError).not.toHaveBeenCalled();
+    });
+  });
 });

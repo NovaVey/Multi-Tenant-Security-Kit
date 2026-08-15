@@ -251,6 +251,46 @@ describe('requirePermission', () => {
     expect(onDenied).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledWith(boom);
   });
+
+  // Regression (MEDIUM): next() used to be invoked from inside the inner
+  // try/catch (right after `options.policy.assert(...)` succeeded). This
+  // package's `NextFunction` is framework-agnostic — it's whatever the
+  // caller supplies, with no guarantee of Express-router-style internal
+  // exception isolation for a downstream handler that throws synchronously
+  // — so a throw reaching back through that call used to be caught right
+  // there and re-forwarded via a *second* call to `next(err)`, violating
+  // the "call next at most once" contract every middleware chain depends
+  // on. `next()` is now called strictly outside both try/catch blocks, so a
+  // throw from `next()` itself surfaces as-is instead of silently becoming
+  // a second call.
+  it('calls next() at most once, even if next() itself throws synchronously', async () => {
+    const middleware = requirePermission({
+      policy,
+      permission: 'invoices:read',
+      getSubject: () => ({ tenantId: 't1', roles: ['viewer'] }),
+    });
+    const req = mockReq();
+    const res = mockRes();
+    const boom = new Error('downstream handler blew up');
+    const next = vi.fn(() => {
+      throw boom;
+    });
+
+    const rejections: unknown[] = [];
+    const onUnhandledRejection = (reason: unknown): void => {
+      rejections.push(reason);
+    };
+    process.once('unhandledRejection', onUnhandledRejection);
+    try {
+      middleware(req, res, next);
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    } finally {
+      process.removeListener('unhandledRejection', onUnhandledRejection);
+    }
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(rejections).toEqual([boom]);
+  });
 });
 
 describe('subjectFromRequestRoles', () => {

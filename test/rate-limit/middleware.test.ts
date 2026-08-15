@@ -310,4 +310,56 @@ describe('createRateLimitMiddleware', () => {
     expect(points).toHaveBeenCalled();
     expect(consume).toHaveBeenCalledWith('tenant:acme', 5, 5, 1000);
   });
+
+  // Regression (MEDIUM): next() used to be invoked from inside this
+  // middleware's own try/catch (on the `result.allowed` branch). This
+  // package's `NextFunction` is framework-agnostic — it's whatever the
+  // caller supplies, with no guarantee of Express-router-style internal
+  // exception isolation for a downstream handler that throws synchronously
+  // — so a throw reaching back through that call used to be caught right
+  // here and re-forwarded via a *second* call to `next(err)`, violating the
+  // "call next at most once" contract every middleware chain depends on.
+  // `next()` is now called strictly outside the try/catch, so a throw from
+  // `next()` itself surfaces as-is instead of silently becoming a second
+  // call.
+  it('calls next() at most once, even if next() itself throws synchronously', async () => {
+    // Real timers for this one test: unhandled-rejection detection is a
+    // real Node.js event-loop mechanism, and this suite's fake timers
+    // (active via beforeEach above) replace setTimeout/etc. with a
+    // synthetic clock that never actually turns the event loop — `flush()`
+    // exists to drain *microtasks* under that fake clock, but the
+    // unhandled-rejection check below needs a real macrotask turn to fire
+    // reliably, which only real timers provide.
+    vi.useRealTimers();
+    try {
+      const store = scriptedStore({ allowed: true, remaining: 4, limit: 5, resetMs: 1000 });
+      const limiter = new TenantRateLimiter({ store, limit: 5, windowMs: 1000 });
+      const middleware = createRateLimitMiddleware({ limiter, getTenantId: () => 'acme' });
+
+      const req = mockReq();
+      const res = mockRes();
+      const boom = new Error('downstream handler blew up');
+      const next = vi.fn(() => {
+        throw boom;
+      });
+
+      const rejections: unknown[] = [];
+      const onUnhandledRejection = (reason: unknown): void => {
+        rejections.push(reason);
+      };
+      process.once('unhandledRejection', onUnhandledRejection);
+      try {
+        middleware(req, res, next);
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      } finally {
+        process.removeListener('unhandledRejection', onUnhandledRejection);
+      }
+
+      expect(next).toHaveBeenCalledTimes(1);
+      expect(rejections).toEqual([boom]);
+    } finally {
+      vi.useFakeTimers();
+      vi.setSystemTime(0);
+    }
+  });
 });

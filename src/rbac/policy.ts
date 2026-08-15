@@ -57,10 +57,22 @@ export class RbacPolicy {
   private readonly definitions: ReadonlyMap<Role, RoleDefinition>;
 
   /**
-   * Memoizes each role's fully-resolved (own + transitively inherited)
-   * permission set. Safe to cache indefinitely because `RbacPolicy` is
-   * immutable and the inheritance graph is guaranteed cycle-free by the
-   * constructor.
+   * Memoizes each *known* role's fully-resolved (own + transitively
+   * inherited) permission set. Safe to cache indefinitely because
+   * `RbacPolicy` is immutable, the inheritance graph is guaranteed
+   * cycle-free by the constructor, and the key space is bounded by
+   * `definitions` — there are only ever as many entries here as roles
+   * passed to the constructor.
+   *
+   * Deliberately does NOT memoize unknown role names (see
+   * {@link resolveRole}) — that key space is *not* bounded, and is
+   * reachable with arbitrary caller-controlled strings (e.g. through
+   * `subjectFromRequestRoles`, which passes request-derived role strings
+   * straight through with no validation against this policy's catalog).
+   * Memoizing every distinct unknown string ever queried would let a
+   * client trivially grow this map without bound just by sending a fresh
+   * role name on each request — the same unbounded-growth shape
+   * `MemoryRateLimitStore` had to guard against for its bucket map.
    */
   private readonly resolvedPermissionsByRole = new Map<Role, ReadonlySet<Permission>>();
 
@@ -96,12 +108,23 @@ export class RbacPolicy {
   }
 
   /**
-   * Resolves each role's own permission set, memoizing the result.
-   * Roles not present in the definitions passed to the constructor
-   * resolve to an empty set — `permissionsFor` (and therefore `can`) is
-   * deliberately lenient about unknown role *names* at check time, since
-   * a subject may legitimately carry a role that was retired from the
-   * catalog without every call site being updated in lockstep.
+   * Resolves each role's own permission set, memoizing the result for
+   * *known* roles only. Roles not present in the definitions passed to
+   * the constructor resolve to an empty set — `permissionsFor` (and
+   * therefore `can`) is deliberately lenient about unknown role *names* at
+   * check time, since a subject may legitimately carry a role that was
+   * retired from the catalog without every call site being updated in
+   * lockstep.
+   *
+   * The unknown-role branch deliberately does NOT cache its result (see
+   * {@link resolvedPermissionsByRole}): unlike a known role, that lookup
+   * does no recursive work worth memoizing, and the "role name" here can
+   * be arbitrary caller-controlled input — a `can()`/`assert()` call fed
+   * by `subjectFromRequestRoles` passes whatever a client sent straight
+   * through with no validation against this policy's catalog. Caching
+   * every distinct value ever seen there would be unbounded, reachable
+   * memory growth: an attacker sending a fresh, never-before-seen role
+   * string on every request could grow this map without limit.
    */
   private resolveRole(role: Role): ReadonlySet<Permission> {
     const cached = this.resolvedPermissionsByRole.get(role);
@@ -109,9 +132,7 @@ export class RbacPolicy {
 
     const definition = this.definitions.get(role);
     if (!definition) {
-      const empty = new Set<Permission>();
-      this.resolvedPermissionsByRole.set(role, empty);
-      return empty;
+      return new Set<Permission>();
     }
 
     const resolved = new Set<Permission>(definition.permissions);
@@ -150,19 +171,22 @@ export class RbacPolicy {
    * This is a pure, side-effect-free query that never throws — prefer
    * {@link assert} at enforcement points so a denial fails loudly instead
    * of needing every call site to remember to check the boolean. A
-   * malformed `subject.roles` (not an array — e.g. a single role string
-   * passed where `roles: [role]` was meant, or a decoded-token claim that
-   * turned out not to be an array) is treated as holding no roles at all
-   * and always resolves to `false`, the same safe-by-default outcome as
-   * a subject that legitimately lacks the permission. Without this check,
-   * `Array.isArray` is skipped and `roles` is iterated as given — a
-   * *string* `roles` value doesn't throw here (strings are iterable, so
-   * it silently iterates character-by-character instead), which is worse
-   * than throwing: it can coincidentally grant permissions from a
+   * missing `subject` itself (`null`/`undefined`, e.g. from a lookup that
+   * came up empty) or a malformed `subject.roles` (not an array — e.g. a
+   * single role string passed where `roles: [role]` was meant, or a
+   * decoded-token claim that turned out not to be an array) is treated as
+   * holding no roles at all and always resolves to `false`, the same
+   * safe-by-default outcome as a subject that legitimately lacks the
+   * permission. Without the `subject` check, a `null`/`undefined` subject
+   * throws a raw `TypeError` reading `.roles` before `Array.isArray` is
+   * ever reached; without the `Array.isArray` check, a *string* `roles`
+   * value doesn't throw here (strings are iterable, so it silently
+   * iterates character-by-character instead), which is worse than
+   * throwing: it can coincidentally grant permissions from a
    * single-character role name.
    */
   can(subject: AccessSubject, permission: Permission): boolean {
-    if (!Array.isArray(subject.roles)) return false;
+    if (!subject || !Array.isArray(subject.roles)) return false;
 
     const granted = this.permissionsFor(subject.roles);
     if (granted.has(permission)) return true;
@@ -186,16 +210,17 @@ export class RbacPolicy {
    * caller that forgets to check a return value.
    *
    * Always throws {@link ForbiddenError} on denial — including when
-   * `subject.roles` isn't an array (see {@link can}) — never a raw,
-   * unbranded error, so callers (e.g. `requirePermission`'s middleware)
-   * can reliably distinguish "denied" from "something else went wrong"
-   * with a plain `instanceof` check.
+   * `subject` is missing entirely or `subject.roles` isn't an array (see
+   * {@link can}) — never a raw, unbranded error, so callers (e.g.
+   * `requirePermission`'s middleware) can reliably distinguish "denied"
+   * from "something else went wrong" with a plain `instanceof` check.
    *
    * @throws {ForbiddenError} naming the missing permission, if {@link can} is false.
    */
   assert(subject: AccessSubject, permission: Permission): void {
     if (!this.can(subject, permission)) {
-      const roles = Array.isArray(subject.roles) ? subject.roles.join(', ') : String(subject.roles);
+      const roles =
+        subject && Array.isArray(subject.roles) ? subject.roles.join(', ') : String(subject?.roles);
       throw new ForbiddenError(
         `Subject with roles [${roles}] lacks required permission "${permission}".`,
         permission,

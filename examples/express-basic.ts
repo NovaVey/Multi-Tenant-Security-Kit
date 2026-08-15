@@ -130,14 +130,22 @@ app.use(
 
 app.get(
   '/invoices/:id',
-  requirePermission({
+  // <express.Request>: MinimalRequest (requirePermission's default) has no
+  // `params` — the onDenied callback below reads `req.params.id`, and the
+  // route handler after it reads `req.params.id` too, so both need
+  // Express's own request type here rather than the framework-agnostic
+  // default. See docs/rbac.md's "Middleware" section for the same pattern.
+  requirePermission<express.Request>({
     policy,
     permission: 'invoices:read',
     getSubject: subjectFromRequestRoles(),
-    onDenied: (req, res, next, error) => {
+    onDenied: (req, res, _next, error) => {
       auditLog.log({
         action: AuditAction.RbacPermissionDenied,
-        targetId: req.params.id,
+        // String(...): Express 5 types route params as `string | string[]`
+        // (to support repeated-segment patterns) — see the same coercion in
+        // docs/tenant-isolation.md's assertTenantMatches example.
+        targetId: String(req.params.id),
         outcome: 'denied',
         metadata: { permission: error.permission },
       });
@@ -145,7 +153,7 @@ app.get(
     },
   }),
   async (req, res) => {
-    const invoice = invoices.get(req.params.id);
+    const invoice = invoices.get(String(req.params.id));
     if (!invoice) {
       res.status(404).json({ error: 'not_found' });
       return;

@@ -62,4 +62,44 @@ describe('tenant context', () => {
       expect(getCurrentTenant()).toEqual({ tenantId: 'acme', extra: { plan: 'enterprise' } });
     });
   });
+
+  // Regression (MEDIUM): runWithTenant used to store the exact object it
+  // was given, unfrozen. TenantContext's fields are declared `readonly` in
+  // TypeScript, but that's compile-time only — anything holding a reference
+  // obtained via getCurrentTenant() (a logging wrapper, a middleware further
+  // down the chain) could reassign `.tenantId` in place, silently changing
+  // what every *other* getCurrentTenantId() call sees for the rest of that
+  // async scope. A mutation attempt on a security boundary this central
+  // should fail loudly, not succeed silently.
+  describe('active tenant context immutability', () => {
+    it('freezes the object returned by getCurrentTenant()', () => {
+      runWithTenant({ tenantId: 'acme' }, () => {
+        expect(Object.isFrozen(getCurrentTenant())).toBe(true);
+      });
+    });
+
+    it('throws (rather than silently succeeding) when something tries to mutate the active context', () => {
+      runWithTenant({ tenantId: 'acme' }, () => {
+        const context = getCurrentTenant() as { tenantId: string };
+        expect(() => {
+          context.tenantId = 'globex';
+        }).toThrow(TypeError);
+        // The mutation attempt must not have partially applied, either.
+        expect(getCurrentTenantId()).toBe('acme');
+      });
+    });
+
+    it('does not freeze or otherwise mutate the caller-supplied context object itself', () => {
+      // runWithTenant freezes a *copy* it stores internally — the object
+      // the caller passed in stays exactly as mutable as it always was,
+      // since the caller may still legitimately own and reuse it outside
+      // this call.
+      const original = { tenantId: 'acme' };
+      runWithTenant(original, () => undefined);
+      expect(Object.isFrozen(original)).toBe(false);
+      expect(() => {
+        original.tenantId = 'still-mutable';
+      }).not.toThrow();
+    });
+  });
 });

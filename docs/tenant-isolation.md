@@ -167,8 +167,11 @@ throw `TenantContextError` if called outside any tenant context at all.
 | `assertTenantMatches(resource)`       | function | Throws unless `resource.tenantId` matches the active tenant                                     |
 | `scopeToTenant(query)`                | function | Injects/validates the active tenant id into a query object                                      |
 | `createTenantMiddleware(options)`     | function | Builds the request-scoping middleware                                                           |
+| `TenantMiddlewareOptions<Req>`        | type     | Options for `createTenantMiddleware`: `{ resolver, validateTenantId?, onMissing? }`             |
+| `TenantResolver<Req>`                 | type     | `(req) => TenantContext \| undefined \| Promise<...>` — what every `*TenantResolver` returns    |
 | `headerTenantResolver(headerName?)`   | function | Resolver: reads a request header (default `x-tenant-id`)                                        |
 | `subdomainTenantResolver(options?)`   | function | Resolver: reads the leftmost hostname label                                                     |
+| `SubdomainTenantResolverOptions`      | type     | `{ baseDomainLabels? }` — options for `subdomainTenantResolver`, default `2`                    |
 | `claimTenantResolver(decode, claim?)` | function | Resolver: reads a claim off an already-decoded token/session                                    |
 | `TenantMissingInfo`                   | type     | `{ reason: 'missing' } \| { reason: 'invalid'; tenantId }` — passed to `onMissing`              |
 | `SecurityKitError`                    | class    | Base class every error in this package extends; carries a stable `.code`                        |
