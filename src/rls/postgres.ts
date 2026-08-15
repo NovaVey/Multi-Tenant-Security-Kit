@@ -38,6 +38,19 @@
  *    `client.query(sql, [tenantId])`). This is the load-bearing security
  *    property of this module — do not "simplify" it by accepting the tenant
  *    id as a function parameter and interpolating it.
+ *
+ * Every OTHER value this module ever splices into a returned SQL string —
+ * not just the two categories above — must go through an explicit
+ * allowlist/validator before use, with no exceptions for values that merely
+ * *look* like they're constrained by a TypeScript type. TS types are erased
+ * at runtime and enforce nothing against a caller who bypasses them (an `as`
+ * cast, a config file, a non-TS consumer): {@link RlsPolicyOptions.command}
+ * previously relied on its `'ALL' | 'SELECT' | ...` union type alone and was
+ * spliced directly into a `FOR ${command}` line with no runtime check at
+ * all — a real, demonstrated SQL-injection vector, fixed by
+ * {@link assertValidCommand}. If you add a new option to this module, ask
+ * "what stops a bypassed-type value from reaching the returned string
+ * unchecked?" before merging, not after.
  */
 
 import { InvalidSqlIdentifierError } from '../errors.js';
@@ -98,6 +111,39 @@ function quoteIdentifier(value: string): string {
 }
 
 /**
+ * The only values Postgres's `CREATE POLICY ... FOR <command>` clause
+ * accepts. {@link RlsPolicyOptions.command}'s TS union type restricts this at
+ * compile time, but that's erased at runtime — a caller that bypasses the
+ * type (a config file, a non-TS consumer, an `as` cast) can otherwise smuggle
+ * an arbitrary string straight into the generated SQL text, since `command`
+ * is spliced directly into a `FOR ${command}` line with no other validation.
+ * Every other value this module accepts goes through {@link assertValidIdentifier}
+ * or {@link assertValidSessionSetting} before being interpolated; this is
+ * `command`'s equivalent choke point.
+ *
+ * Exported only so `test/rls/postgres.fuzz.test.ts` has a real oracle to fuzz
+ * against instead of duplicating this list (and risking drift) in a test
+ * file — same reasoning as {@link IDENTIFIER_PATTERN}. Not re-exported from
+ * `rls/index.ts`, so it stays out of the package's public API.
+ */
+export const VALID_RLS_COMMANDS = new Set(['ALL', 'SELECT', 'INSERT', 'UPDATE', 'DELETE']);
+
+/**
+ * Validates that `value` is one of the five values Postgres's `CREATE
+ * POLICY ... FOR <command>` clause actually accepts, throwing an
+ * {@link InvalidSqlIdentifierError} if not. See {@link VALID_RLS_COMMANDS}.
+ */
+function assertValidCommand(value: string): void {
+  if (typeof value !== 'string' || !VALID_RLS_COMMANDS.has(value)) {
+    throw new InvalidSqlIdentifierError(
+      value,
+      'command',
+      `Invalid RLS command: ${JSON.stringify(value)}. Must be one of ${Array.from(VALID_RLS_COMMANDS).join(', ')}.`,
+    );
+  }
+}
+
+/**
  * Generates the SQL to enable *and force* row-level security on `table`.
  *
  * Forcing RLS (`FORCE ROW LEVEL SECURITY`) is easy to forget and is a common
@@ -140,7 +186,13 @@ export function generateEnableRlsSql(table: string): string {
  *
  * @throws {InvalidSqlIdentifierError} if `options.table`, `options.tenantColumn`,
  * `options.policyName`, or `options.sessionSetting` is not a valid SQL
- * identifier (or, for `sessionSetting`, dot-separated identifier).
+ * identifier (or, for `sessionSetting`, dot-separated identifier); if any
+ * entry of `options.roles` is not a valid SQL identifier; or if
+ * `options.command` is not one of `'ALL' | 'SELECT' | 'INSERT' | 'UPDATE' |
+ * 'DELETE'` — the TS type only restricts this at compile time, and `command`
+ * is spliced directly into the generated SQL, so a caller that bypasses the
+ * type (an `as` cast, a config file, a non-TS consumer) is rejected here
+ * rather than allowed to inject arbitrary SQL text.
  */
 export function generateTenantIsolationPolicySql(options: RlsPolicyOptions): string {
   const table = options.table;
@@ -153,6 +205,7 @@ export function generateTenantIsolationPolicySql(options: RlsPolicyOptions): str
   assertValidIdentifier(tenantColumn, 'tenantColumn');
   assertValidIdentifier(policyName, 'policyName');
   assertValidSessionSetting(sessionSetting, 'sessionSetting');
+  assertValidCommand(command);
   if (options.roles) {
     for (const role of options.roles) {
       assertValidIdentifier(role, 'roles');

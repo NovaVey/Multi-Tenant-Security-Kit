@@ -19,6 +19,7 @@ import fc from 'fast-check';
 import { InvalidSqlIdentifierError } from '../../src/errors.js';
 import {
   IDENTIFIER_PATTERN,
+  VALID_RLS_COMMANDS,
   generateEnableRlsSql,
   generateSetTenantContextSql,
   generateTenantIsolationPolicySql,
@@ -71,6 +72,20 @@ describe('RLS SQL generation — injection-payload corpus', () => {
       expect(() => generateTenantIsolationPolicySql({ table: 'invoices', roles: [bad] })).toThrow(
         InvalidSqlIdentifierError,
       );
+    }
+  });
+
+  it('generateTenantIsolationPolicySql() rejects every injection payload as a command value too', () => {
+    // Regression (CRITICAL): command was the one field in this module that
+    // reached the returned SQL text with no validation at all — see the
+    // dedicated regression block in postgres.test.ts. Every payload that
+    // must be rejected as an identifier must equally be rejected as a
+    // command, since it's spliced into the exact same kind of position
+    // (`FOR ${command}`) with no quoting to fall back on as defense in depth.
+    for (const bad of SINGLE_SEGMENT_INJECTION_PAYLOADS) {
+      expect(() =>
+        generateTenantIsolationPolicySql({ table: 'invoices', command: bad as never }),
+      ).toThrow(InvalidSqlIdentifierError);
     }
   });
 
@@ -147,6 +162,21 @@ describe('RLS SQL generation — fuzzing against IDENTIFIER_PATTERN', () => {
           expect(nextParamIndex).toBe(paramIndex + 1);
         },
       ),
+      { numRuns: 2000 },
+    );
+  });
+
+  it('generateTenantIsolationPolicySql(): accepts a command iff it is one of VALID_RLS_COMMANDS', () => {
+    fc.assert(
+      fc.property(fc.string({ maxLength: 50 }), (command) => {
+        const call = () =>
+          generateTenantIsolationPolicySql({ table: 'invoices', command: command as never });
+        if (!VALID_RLS_COMMANDS.has(command)) {
+          expect(call).toThrow(InvalidSqlIdentifierError);
+        } else {
+          expect(call).not.toThrow();
+        }
+      }),
       { numRuns: 2000 },
     );
   });
