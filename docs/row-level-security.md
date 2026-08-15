@@ -27,7 +27,13 @@ opposite ways on purpose:
    "safe to splice into SQL" unconditionally. An invalid identifier throws
    an `InvalidSqlIdentifierError` (`code: 'INVALID_SQL_IDENTIFIER'`) naming
    the offending value and parameter — like every error this package
-   throws, it extends the shared `SecurityKitError` base.
+   throws, it extends the shared `SecurityKitError` base. `command` gets the
+   same treatment even though it isn't identifier-shaped: it's checked
+   against an explicit allowlist of the five values Postgres's `CREATE
+POLICY` grammar accepts (`'ALL' | 'SELECT' | 'INSERT' | 'UPDATE' |
+'DELETE'`) before being interpolated, since its TypeScript union type
+   only constrains callers who are type-checked — a config file, a plain-JS
+   consumer, or an `as` cast can bypass it otherwise.
 2. **The tenant id value** is genuine runtime, per-request user input, and it
    is **never** interpolated into any string this module returns.
    `generateSetTenantContextSql` only ever emits the placeholder `$1` —
@@ -218,14 +224,14 @@ mostly-default policies for most tables, with a few overridden.
 
 ## API reference
 
-| Export                                          | Kind     | Summary                                                                            |
-| ----------------------------------------------- | -------- | ---------------------------------------------------------------------------------- |
-| `RlsPolicyOptions`                              | type     | `{ table, tenantColumn?, policyName?, sessionSetting?, command?, roles? }`         |
-| `generateEnableRlsSql(table)`                   | function | `ENABLE` + `FORCE ROW LEVEL SECURITY` statements                                   |
-| `generateTenantIsolationPolicySql(options)`     | function | `CREATE POLICY` statement                                                          |
-| `generateSetTenantContextSql(sessionSetting?)`  | function | Session/transaction-scoped `set_config`, tenant id as `$1`                         |
-| `TenantWhereClauseResult`                       | type     | `{ clause, nextParamIndex }`                                                       |
-| `tenantWhereClause(tenantColumn?, paramIndex?)` | function | Composable `"<column>" = $<n>` fragment                                            |
-| `generateTenantIsolationMigration(tables)`      | function | Full migration for a list of tables                                                |
-| `SecurityKitError`                              | class    | Base class every error in this package extends; carries a stable `.code`           |
-| `InvalidSqlIdentifierError`                     | class    | Thrown for an invalid identifier or `paramIndex`; `code: 'INVALID_SQL_IDENTIFIER'` |
+| Export                                          | Kind     | Summary                                                                                        |
+| ----------------------------------------------- | -------- | ---------------------------------------------------------------------------------------------- |
+| `RlsPolicyOptions`                              | type     | `{ table, tenantColumn?, policyName?, sessionSetting?, command?, roles? }`                     |
+| `generateEnableRlsSql(table)`                   | function | `ENABLE` + `FORCE ROW LEVEL SECURITY` statements                                               |
+| `generateTenantIsolationPolicySql(options)`     | function | `CREATE POLICY` statement                                                                      |
+| `generateSetTenantContextSql(sessionSetting?)`  | function | Session/transaction-scoped `set_config`, tenant id as `$1`                                     |
+| `TenantWhereClauseResult`                       | type     | `{ clause, nextParamIndex }`                                                                   |
+| `tenantWhereClause(tenantColumn?, paramIndex?)` | function | Composable `"<column>" = $<n>` fragment                                                        |
+| `generateTenantIsolationMigration(tables)`      | function | Full migration for a list of tables                                                            |
+| `SecurityKitError`                              | class    | Base class every error in this package extends; carries a stable `.code`                       |
+| `InvalidSqlIdentifierError`                     | class    | Thrown for an invalid identifier, `command`, or `paramIndex`; `code: 'INVALID_SQL_IDENTIFIER'` |

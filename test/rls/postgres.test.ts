@@ -230,6 +230,62 @@ describe('generateTenantIsolationPolicySql', () => {
       }),
     ).not.toThrow();
   });
+
+  // Regression (CRITICAL): unlike every other field this function accepts,
+  // `command` was spliced directly into the returned SQL (`  FOR ${command}`)
+  // with no runtime validation at all — only the TS union type
+  // `'ALL' | 'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE'` constrained it, and
+  // that's erased at runtime. A caller bypassing the type (an `as` cast, a
+  // config file, a non-TS consumer — exactly the "generated migrations are
+  // routinely copy-pasted, re-templated, or built from config files"
+  // scenario this module's own security-model comment already warns about
+  // for identifiers) could inject arbitrary SQL text, e.g.
+  // `'SELECT;\nDROP TABLE victim;--'` producing a working multi-statement
+  // injection. `command` now goes through the same allowlist-or-reject
+  // pattern as every other interpolated value.
+  for (const bad of [
+    'SELECT; DROP TABLE users;--',
+    'SELECT;\nDROP TABLE victim;--',
+    'select', // valid keyword, but wrong case — Postgres's grammar and this module's allowlist are both case-sensitive here
+    'ALL; --',
+    '',
+    'TRUNCATE',
+    'SELECT OR TRUE',
+  ]) {
+    it(`rejects invalid command ${JSON.stringify(bad)} with an InvalidSqlIdentifierError`, () => {
+      expect(() =>
+        generateTenantIsolationPolicySql({ table: 'invoices', command: bad as never }),
+      ).toThrow(InvalidSqlIdentifierError);
+    });
+  }
+
+  it('the injection-shaped command is rejected before it ever reaches the returned SQL text', () => {
+    const injected = 'SELECT;\nDROP TABLE victim;--';
+    let sql: string | undefined;
+    try {
+      sql = generateTenantIsolationPolicySql({ table: 'invoices', command: injected as never });
+    } catch {
+      // expected
+    }
+    expect(sql).toBeUndefined();
+  });
+
+  it('error for an invalid command names the "command" parameter', () => {
+    try {
+      generateTenantIsolationPolicySql({ table: 'invoices', command: 'DROP' as never });
+      expect.unreachable('should have thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(InvalidSqlIdentifierError);
+      const error = err as InvalidSqlIdentifierError;
+      expect(error.paramName).toBe('command');
+    }
+  });
+
+  it('still accepts every documented command value after the validation fix', () => {
+    for (const command of ['ALL', 'SELECT', 'INSERT', 'UPDATE', 'DELETE'] as const) {
+      expect(() => generateTenantIsolationPolicySql({ table: 'invoices', command })).not.toThrow();
+    }
+  });
 });
 
 describe('generateSetTenantContextSql', () => {
@@ -373,6 +429,14 @@ describe('generateTenantIsolationMigration', () => {
   it('propagates an InvalidSqlIdentifierError when an options-object entry has an invalid tenantColumn', () => {
     expect(() =>
       generateTenantIsolationMigration([{ table: 'orders', tenantColumn: 'my column' }]),
+    ).toThrow(InvalidSqlIdentifierError);
+  });
+
+  it('propagates an InvalidSqlIdentifierError when an options-object entry has an invalid command', () => {
+    expect(() =>
+      generateTenantIsolationMigration([
+        { table: 'orders', command: 'SELECT;\nDROP TABLE victim;--' as never },
+      ]),
     ).toThrow(InvalidSqlIdentifierError);
   });
 });
