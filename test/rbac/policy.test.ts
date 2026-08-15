@@ -157,6 +157,34 @@ describe('RbacPolicy.permissionsFor', () => {
     expect(policy.permissionsFor(['ghost'])).toEqual(new Set());
   });
 
+  // Regression (MEDIUM): unknown role names used to be memoized in the same
+  // cache as known ones, with no bound on the key space. `can`/`assert` are
+  // reachable with arbitrary caller-controlled role strings via
+  // `subjectFromRequestRoles`, which passes request-derived roles straight
+  // through with no validation against the policy's catalog — an attacker
+  // sending a fresh, never-before-seen role name on every request could grow
+  // that cache without limit, an unbounded-memory-growth DoS shaped exactly
+  // like `MemoryRateLimitStore`'s pre-`maxBuckets` bucket map. The fix
+  // simply never caches the not-found case (there's no recursive work there
+  // worth memoizing anyway), so the cache's size is now provably bounded by
+  // the number of *known* roles regardless of how many distinct unknown
+  // roles are ever queried.
+  it('never grows its internal cache past the number of known roles, however many distinct unknown roles are queried', () => {
+    const policy = new RbacPolicy([{ name: 'viewer', permissions: ['invoices:read'] }]);
+    const internals = policy as unknown as {
+      resolvedPermissionsByRole: ReadonlyMap<string, unknown>;
+    };
+
+    for (let i = 0; i < 5000; i++) {
+      policy.permissionsFor([`ghost-role-${i}`]);
+    }
+
+    // Only unknown roles were ever queried — the known role ("viewer") was
+    // never resolved, so the cache should be completely empty, not just
+    // "small". Before the fix, this would have grown to 5000 entries.
+    expect(internals.resolvedPermissionsByRole.size).toBe(0);
+  });
+
   it('does not duplicate permissions shared across a diamond inheritance shape', () => {
     const policy = new RbacPolicy([
       { name: 'base', permissions: ['base:read'] },
@@ -230,6 +258,24 @@ describe('RbacPolicy.can', () => {
       });
     }
 
+    // Regression (MEDIUM): the malformed-roles cases above all covered
+    // subject.roles being wrong; this covers `subject` *itself* being
+    // missing. `can()` used to read `subject.roles` unconditionally before
+    // checking `Array.isArray`, so `can(null, ...)` / `can(undefined, ...)`
+    // threw a raw, unbranded TypeError ("Cannot read properties of null
+    // (reading 'roles')") straight out of a function whose own doc comment
+    // promises it "never throws" — reachable any time a non-TS consumer, an
+    // `as` cast, or a lookup that legitimately came up empty hands this a
+    // missing subject.
+    for (const missingSubject of [null, undefined]) {
+      it(`denies (does not throw) for subject = ${String(missingSubject)}`, () => {
+        expect(() =>
+          policy.can(missingSubject as unknown as AccessSubject, 'invoices:read'),
+        ).not.toThrow();
+        expect(policy.can(missingSubject as unknown as AccessSubject, 'invoices:read')).toBe(false);
+      });
+    }
+
     it('a single-character role name string does not coincidentally grant anything', () => {
       // Regression for the specific silent-wrong-ALLOW shape: if a role
       // literally named "v" existed and roles were iterated
@@ -284,4 +330,20 @@ describe('RbacPolicy.assert', () => {
     } as unknown as AccessSubject;
     expect(() => policy.assert(malformedSubject, 'invoices:read')).toThrow(ForbiddenError);
   });
+
+  // Regression (MEDIUM): same class of bug as the previous test, but for
+  // `subject` itself being missing rather than just `subject.roles`. Before
+  // the fix, `assert()`'s error-message-building fallback
+  // (`String(subject.roles)`) still dereferenced `.roles` off a possibly-
+  // null/undefined `subject` unconditionally, so this threw the same raw
+  // TypeError `can()` did — even though `can()` itself had already been
+  // fixed to treat a missing subject as "no permissions" rather than
+  // throwing.
+  for (const missingSubject of [null, undefined]) {
+    it(`throws ForbiddenError, not a raw TypeError, when subject is ${String(missingSubject)}`, () => {
+      expect(() =>
+        policy.assert(missingSubject as unknown as AccessSubject, 'invoices:read'),
+      ).toThrow(ForbiddenError);
+    });
+  }
 });

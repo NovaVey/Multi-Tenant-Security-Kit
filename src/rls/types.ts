@@ -49,9 +49,10 @@ export interface RlsPolicyOptions {
    */
   command?: 'ALL' | 'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE';
   /**
-   * Postgres roles the policy applies `TO`. Omit to leave off the `TO`
-   * clause entirely, which makes the policy apply to every role querying
-   * the table (Postgres's default when `TO` is not specified).
+   * Postgres roles the policy applies `TO`. Omit (or pass an empty array —
+   * both are treated identically) to leave off the `TO` clause entirely,
+   * which makes the policy apply to every role querying the table
+   * (Postgres's default when `TO` is not specified).
    */
   roles?: string[];
 }

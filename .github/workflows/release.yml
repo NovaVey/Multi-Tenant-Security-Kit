@@ -115,6 +115,48 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+      # Diagnostic-only, and specifically for the case every step below this
+      # one can't see at all: the changesets/action step above *failing*
+      # outright (non-zero exit), not just succeeding without publishing.
+      # That step runs `npx changeset version` and, when there are no
+      # pending changesets, `npx changeset publish` — its own post-publish
+      # bookkeeping (parsing output, setting its GitHub Actions outputs) can
+      # still fail *after* `npm publish` itself already succeeded, and a
+      # network blip on the final response of a successful publish can look
+      # identical to one on a failed one. `if: failure()` is required here,
+      # not just `if: steps.changesets.outcome == 'failure'` on its own —
+      # per GitHub Actions' rules, a step `if:` with no explicit status
+      # function is implicitly ANDed with `success()`, so without it this
+      # step would silently never run right when it's needed (the same
+      # implicit-gating mistake `check-publish` below exists to route
+      # around for the *other* branch: this step is `check-publish`'s
+      # sibling, not a replacement for it — check-publish only runs when
+      # changesets/action itself reported success).
+      #
+      # Never fails the job further itself (the changesets step failing
+      # already does that) — purely a best-effort diagnostic so a failed run
+      # says whether a real publish is stuck behind it, instead of leaving
+      # that to be rediscovered by hand days later.
+      - name: Diagnose whether a failed version/publish step still published
+        if: failure() && steps.changesets.outcome == 'failure'
+        run: |
+          set +e
+          VERSION="$(node -p "require('./package.json').version" 2>/dev/null)"
+          NAME="$(node -p "require('./package.json').name" 2>/dev/null)"
+          if [ -z "$VERSION" ] || [ -z "$NAME" ]; then
+            echo "::error::The changesets/action step failed, and package.json couldn't even be read to check npm afterward — see that step's own log above for the real error."
+            exit 0
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null 2>&1; then
+            echo "v$VERSION is already tagged — this failure looks unrelated to publishing (or a prior run already recovered it)."
+            exit 0
+          fi
+          if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
+            echo "::error::The changesets/action step above failed, but $NAME@$VERSION is ALREADY published on npm and untagged — the failure happened after \`npm publish\` succeeded (e.g. in its own post-publish bookkeeping), not before it. This run will NOT create the git tag or GitHub Release automatically. Recover by hand per CONTRIBUTING.md: tag this commit v$VERSION and create the GitHub Release yourself."
+          else
+            echo "$NAME@$VERSION is not visible on npm — the changesets/action step failed before (or without) publishing; see that step's own log above for the real error."
+          fi
+
       # steps.changesets.outputs.published is NOT trustworthy: changesets/
       # action detects a successful publish by regex-matching a literal
       # "New tag:" line in `npx changeset publish`'s stdout. The 0.2.0

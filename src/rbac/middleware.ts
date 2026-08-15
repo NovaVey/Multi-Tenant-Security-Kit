@@ -79,9 +79,11 @@ export function requirePermission<Req extends MinimalRequest = MinimalRequest>(
 
   return (req, res, next) => {
     void (async () => {
+      let subject: AccessSubject;
+      let permission: Permission;
       try {
-        const subject = await options.getSubject(req);
-        if (!subject) {
+        const resolved = await options.getSubject(req);
+        if (!resolved) {
           onDenied(
             req,
             res,
@@ -90,23 +92,37 @@ export function requirePermission<Req extends MinimalRequest = MinimalRequest>(
           );
           return;
         }
-
-        const permission =
+        subject = resolved;
+        permission =
           typeof options.permission === 'function' ? options.permission(req) : options.permission;
-
-        try {
-          options.policy.assert(subject, permission);
-          next();
-        } catch (err) {
-          if (err instanceof ForbiddenError) {
-            onDenied(req, res, next, err);
-            return;
-          }
-          throw err;
-        }
       } catch (err) {
         next(err);
+        return;
       }
+
+      try {
+        options.policy.assert(subject, permission);
+      } catch (err) {
+        if (err instanceof ForbiddenError) {
+          onDenied(req, res, next, err);
+          return;
+        }
+        next(err);
+        return;
+      }
+
+      // `next()` is deliberately outside both try/catch blocks above (it
+      // used to sit inside the second one, right after `.assert()`
+      // succeeds). `next()` runs the rest of the request pipeline inline
+      // for synchronous downstream code — if a downstream handler threw and
+      // this were still inside a try/catch that also calls `next(err)`,
+      // that throw would be caught right here and forwarded via `next(err)`
+      // a *second* time for the same request (the first, successful call
+      // already ran and is what triggered the throw). By the time control
+      // reaches here, `.assert()` has already succeeded — nothing left for
+      // this middleware to redirect to `onDenied`/`next(err)` on its own
+      // account.
+      next();
     })();
   };
 }

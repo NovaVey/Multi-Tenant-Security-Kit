@@ -81,20 +81,37 @@ export function createTenantMiddleware<Req extends MinimalRequest = MinimalReque
 
   return (req, res, next) => {
     void (async () => {
+      let context: TenantContext;
       try {
-        const context = await options.resolver(req);
-        if (!context) {
+        const resolved = await options.resolver(req);
+        if (!resolved) {
           onMissing(req, res, next, { reason: 'missing' });
           return;
         }
-        if (!validateTenantId(context.tenantId)) {
-          onMissing(req, res, next, { reason: 'invalid', tenantId: context.tenantId });
+        if (!validateTenantId(resolved.tenantId)) {
+          onMissing(req, res, next, { reason: 'invalid', tenantId: resolved.tenantId });
           return;
         }
-        runWithTenant(context, () => next());
+        context = resolved;
       } catch (err) {
         next(err);
+        return;
       }
+      // Deliberately outside the try/catch above. `next()` runs the rest of
+      // the request pipeline, inline and synchronously for any synchronous
+      // downstream code — if a downstream handler threw and that try/catch
+      // still wrapped this call, it would be caught right here and
+      // forwarded via `next(err)`, a *second* call to `next` for the same
+      // request (the first, successful call already ran and is what
+      // triggered the throw). This package's `Middleware`/`NextFunction`
+      // types are framework-agnostic — `next` is whatever the caller
+      // supplied, with no guarantee of Express-router-style internal
+      // exception isolation — so that double call is a real, reachable bug,
+      // not a hypothetical one. Whatever happens inside `next()` from here
+      // is downstream code's problem to handle, not this middleware's; it
+      // has already done its own job (resolving and validating the tenant)
+      // successfully by the time it gets here.
+      runWithTenant(context, () => next());
     })();
   };
 }

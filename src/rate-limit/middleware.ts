@@ -100,14 +100,28 @@ export function createRateLimitMiddleware<Req extends MinimalRequest = MinimalRe
         res.setHeader('RateLimit-Remaining', result.remaining);
         res.setHeader('RateLimit-Reset', secondsUntil(result.resetMs));
 
-        if (result.allowed) {
-          next();
-        } else {
+        if (!result.allowed) {
           onLimited(req, res, next, result);
+          return;
         }
       } catch (err) {
         next(err);
+        return;
       }
+      // `next()` is deliberately outside the try/catch above (it used to
+      // sit inside it, on the `result.allowed` branch). `next()` runs the
+      // rest of the request pipeline inline for synchronous downstream
+      // code — if a downstream handler threw and this were still inside a
+      // try/catch that also calls `next(err)`, that throw would be caught
+      // right here and forwarded via `next(err)` a *second* time for the
+      // same request (the first, successful call already ran and is what
+      // triggered the throw). `onLimited` (the "budget exhausted" branch)
+      // deliberately stays inside the try/catch above, unlike this call —
+      // unlike our own bare `next()`, it isn't guaranteed to invoke
+      // downstream code at all (the default implementation just sends a
+      // response), so a throw from it is still exactly the kind of
+      // unexpected failure `next(err)` exists to report.
+      next();
     })();
   };
 }
