@@ -66,8 +66,11 @@ class KmsKeyProvider implements KeyProvider {
 const encryptor = new TenantEncryptor({ keyProvider: new KmsKeyProvider() });
 ```
 
-`StaticKeyProvider` (a direct `tenantId -> key` map) is provided for tests
-and fixtures where deterministic keys matter more than derivation.
+`StaticKeyProvider` (a direct `tenantId -> key` map) is useful for tests and
+fixtures where deterministic keys matter more than derivation, and is also a
+reasonable fit for small, fixed deployments that already manage per-tenant
+keys out of band. `getDataKey` throws `InvalidKeyError` for a tenant with no
+configured key.
 
 ## Associated data (AAD)
 
@@ -93,6 +96,10 @@ await encryptor.decrypt('acme', payload, aad);
   bytes), so a caller-supplied `EncryptedPayload` with a truncated tag is
   rejected explicitly rather than silently authenticated at much weaker odds
   than the 128 bits this module otherwise guarantees,
+- an `iv` that isn't exactly 12 bytes once base64-decoded (a malformed `iv`
+  already fails safe on its own — GCM's tag verification catches it the same
+  as any other tampering — this check just makes the failure reason explicit
+  and deterministic rather than incidental),
 - mismatched or missing `aad`.
 
 This isn't reimplemented by this module — it relies entirely on AES-GCM's
@@ -100,21 +107,35 @@ built-in authentication-tag verification inside `decipher.final()`. Nothing
 here does a manual tag comparison, which is an easy place to introduce a
 timing side channel.
 
+`encrypt`/`decrypt` both throw `InvalidTenantIdError` for an empty-string
+`tenantId` — this is deliberately not treated as "the tenant with no id", so
+a caller-side bug that silently produces `''` instead of a real id fails
+loudly instead of quietly deriving/using a real, working key.
+
 A malformed master secret or a `KeyProvider` returning a key of the wrong
-length (not exactly 32 bytes) throws `InvalidKeyError` instead — from
-`EnvKeyProvider`'s constructor, or from either `encrypt`/`decrypt` if a
-custom `KeyProvider` (e.g. a KMS integration) misbehaves.
+length (not exactly 32 bytes, or not actually a `Buffer` at all) throws
+`InvalidKeyError` instead — from `EnvKeyProvider`'s constructor, from
+`StaticKeyProvider` for an unconfigured tenant, or from either
+`encrypt`/`decrypt` if a custom `KeyProvider` (e.g. a KMS integration)
+misbehaves.
+
+`encrypt` throws `EncryptionError` if the underlying `node:crypto` cipher
+operation itself fails — essentially unreachable under normal use (unlike
+decryption, encryption has no authentication step that can fail), wrapped
+purely for consistency with every other typed failure in this module.
 
 ## API reference
 
-| Export                   | Kind      | Summary                                                                                       |
-| ------------------------ | --------- | --------------------------------------------------------------------------------------------- |
-| `KeyProvider`            | interface | `getDataKey(tenantId): Buffer \| Promise<Buffer>` — the extension point                       |
-| `EncryptedPayload`       | type      | `{ ciphertext, iv, authTag, keyId? }` (all base64)                                            |
-| `EnvKeyProvider`         | class     | HKDF-derives a per-tenant key from one master secret                                          |
-| `StaticKeyProvider`      | class     | Fixed `tenantId -> key` map — tests/fixtures                                                  |
-| `TenantEncryptorOptions` | type      | `{ keyProvider: KeyProvider }`                                                                |
-| `TenantEncryptor`        | class     | `.encrypt(tenantId, plaintext, aad?)`, `.decrypt(tenantId, payload, aad?)`                    |
-| `SecurityKitError`       | class     | Base class every error in this package extends; carries a stable `.code`                      |
-| `DecryptionError`        | class     | Thrown by `.decrypt()` (bad key, tampered payload, wrong tenant); `code: 'DECRYPTION_FAILED'` |
-| `InvalidKeyError`        | class     | Thrown for a too-short master secret or wrong-length `KeyProvider` key; `code: 'INVALID_KEY'` |
+| Export                   | Kind      | Summary                                                                                               |
+| ------------------------ | --------- | ----------------------------------------------------------------------------------------------------- |
+| `KeyProvider`            | interface | `getDataKey(tenantId): Buffer \| Promise<Buffer>` — the extension point                               |
+| `EncryptedPayload`       | type      | `{ ciphertext, iv, authTag, keyId? }` (all base64)                                                    |
+| `EnvKeyProvider`         | class     | HKDF-derives a per-tenant key from one master secret                                                  |
+| `StaticKeyProvider`      | class     | Fixed `tenantId -> key` map — tests/fixtures                                                          |
+| `TenantEncryptorOptions` | type      | `{ keyProvider: KeyProvider }`                                                                        |
+| `TenantEncryptor`        | class     | `.encrypt(tenantId, plaintext, aad?)`, `.decrypt(tenantId, payload, aad?)`                            |
+| `SecurityKitError`       | class     | Base class every error in this package extends; carries a stable `.code`                              |
+| `DecryptionError`        | class     | Thrown by `.decrypt()` (bad key, tampered payload, wrong tenant); `code: 'DECRYPTION_FAILED'`         |
+| `EncryptionError`        | class     | Thrown by `.encrypt()` if the underlying cipher operation fails; `code: 'ENCRYPTION_FAILED'`          |
+| `InvalidKeyError`        | class     | Thrown for a too-short/missing master secret or wrong-length `KeyProvider` key; `code: 'INVALID_KEY'` |
+| `InvalidTenantIdError`   | class     | Thrown by `.encrypt()`/`.decrypt()` for an empty-string `tenantId`; `code: 'INVALID_TENANT_ID'`       |

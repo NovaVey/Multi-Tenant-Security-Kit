@@ -113,6 +113,48 @@ describe('RbacPolicy construction', () => {
         ]),
     ).not.toThrow();
   });
+
+  // Regression (LOW): the constructor used to store each RoleDefinition by
+  // reference — mutating the *original* array a caller passed in (still
+  // held onto after construction) silently changed an already-built
+  // policy's behavior, contradicting this class's own "instances are
+  // immutable" docs. Verified live before this fix: pushing a new
+  // permission onto the original array, before that role's first
+  // resolution, changed what .can() returned for it with no error at all.
+  it('is unaffected by a caller mutating the original roleDefinitions array/permissions after construction', () => {
+    // Declared with an explicitly *mutable* local type — RoleDefinition's
+    // own fields are `readonly` (documenting that RbacPolicy copies them),
+    // but a real caller's own array, before ever handing it to RbacPolicy,
+    // is naturally still mutable like this.
+    const roleDefs: { name: string; permissions: string[] }[] = [
+      { name: 'viewer', permissions: ['invoices:read'] },
+    ];
+    const policy = new RbacPolicy(roleDefs);
+
+    // Mutate the original array's permissions (not a copy) after
+    // construction, before ever resolving this role.
+    roleDefs[0]!.permissions.push('invoices:write');
+    // Also try appending an entirely new role definition to the array.
+    roleDefs.push({ name: 'admin', permissions: ['*'] });
+
+    expect(policy.can(subject(['viewer']), 'invoices:write')).toBe(false);
+    expect(policy.can(subject(['admin']), 'invoices:read')).toBe(false); // 'admin' was never really added
+  });
+
+  it('the stored permissions/inherits arrays are frozen', () => {
+    const policy = new RbacPolicy([
+      { name: 'viewer', permissions: ['invoices:read'], inherits: [] },
+    ]);
+    // permissionsFor's result Set is a fresh copy either way; this asserts
+    // the *internal* storage is frozen by reaching into it the same way
+    // the unbounded-cache regression test above does.
+    const internals = policy as unknown as {
+      definitions: ReadonlyMap<string, { permissions: unknown; inherits: unknown }>;
+    };
+    const stored = internals.definitions.get('viewer')!;
+    expect(Object.isFrozen(stored.permissions)).toBe(true);
+    expect(Object.isFrozen(stored.inherits)).toBe(true);
+  });
 });
 
 describe('RbacPolicy.permissionsFor', () => {

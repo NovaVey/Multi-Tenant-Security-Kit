@@ -59,6 +59,20 @@ function describeSink(sink: unknown): string {
 }
 
 /**
+ * Duck-types "is this a promise" via `.then`, deliberately not `value
+ * instanceof Promise` — see {@link AuditLogger.writeToSink} for why that
+ * distinction matters (a cross-realm promise is a genuine thenable that
+ * still fails `instanceof Promise` in the current realm).
+ */
+function isThenable(value: unknown): value is PromiseLike<unknown> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as { then?: unknown }).then === 'function'
+  );
+}
+
+/**
  * Fans a single audit event out to every configured {@link AuditSink}.
  *
  * The core guarantee this class exists to provide is isolation: a bug or
@@ -80,6 +94,15 @@ export class AuditLogger {
    */
   private readonly defaults: Partial<AuditEventInput>;
 
+  /**
+   * @param options Sinks, `onSinkError`, and `redact` — see {@link AuditLoggerOptions}.
+   * @param defaults @internal Set by {@link child}; not part of the public
+   * constructor contract. TypeScript has no real access-control mechanism
+   * for a single constructor's own parameters short of a separate factory
+   * function — this `@internal` tag (recognized by TypeDoc and similar
+   * tooling) plus this doc comment are how that intent is communicated:
+   * always empty for a logger created directly via `new AuditLogger(options)`.
+   */
   constructor(options: AuditLoggerOptions, defaults: Partial<AuditEventInput> = {}) {
     this.sinks = options.sinks;
     this.onSinkError = options.onSinkError ?? defaultOnSinkError;
@@ -157,14 +180,31 @@ export class AuditLogger {
   /**
    * Writes to a single sink, converting any synchronous throw or promise
    * rejection into an `onSinkError` call rather than letting it escape.
+   *
+   * Detects "did `write` return a promise" via {@link isThenable} (duck
+   * typing on `.then`) rather than `result instanceof Promise` — `Promise`
+   * bindings are per-realm, so a value from a different realm (a `vm.Context`,
+   * historically an iframe/Worker in a browser-like environment) that
+   * rejects can be a completely genuine, spec-compliant thenable while
+   * still failing `instanceof Promise` in *this* realm. `instanceof` would
+   * silently treat that as a synchronous return value instead — the
+   * rejection is then never awaited or caught by anything, `onSinkError`
+   * never fires, and the rejection still surfaces as an unhandled
+   * rejection (verified live via `node:vm`), defeating the entire point of
+   * this method.
    */
   private writeToSink(sink: AuditSink, event: AuditEvent): void {
     try {
-      const result = sink.write(event);
-      if (result instanceof Promise) {
-        result.catch((cause: unknown) => {
-          this.reportError(describeSink(sink), cause);
-        });
+      const result: unknown = sink.write(event);
+      if (isThenable(result)) {
+        result.then(
+          () => {
+            // No-op: writeToSink only reports failures.
+          },
+          (cause: unknown) => {
+            this.reportError(describeSink(sink), cause);
+          },
+        );
       }
     } catch (cause) {
       this.reportError(describeSink(sink), cause);

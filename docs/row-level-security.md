@@ -21,19 +21,28 @@ opposite ways on purpose:
 1. **Identifiers** (table/column/policy/role/session-setting names) are
    developer-supplied at migration-authoring time, not end-user request
    input. Even so, this module validates every one of them against a strict
-   `^[a-zA-Z_][a-zA-Z0-9_]*$` allowlist before using it, and double-quotes it
-   in the output as defense in depth — generated migrations get copy-pasted
-   and re-templated often enough that "developer-supplied" shouldn't imply
-   "safe to splice into SQL" unconditionally. An invalid identifier throws
-   an `InvalidSqlIdentifierError` (`code: 'INVALID_SQL_IDENTIFIER'`) naming
-   the offending value and parameter — like every error this package
-   throws, it extends the shared `SecurityKitError` base. `command` gets the
-   same treatment even though it isn't identifier-shaped: it's checked
-   against an explicit allowlist of the five values Postgres's `CREATE
-POLICY` grammar accepts (`'ALL' | 'SELECT' | 'INSERT' | 'UPDATE' |
-'DELETE'`) before being interpolated, since its TypeScript union type
-   only constrains callers who are type-checked — a config file, a plain-JS
-   consumer, or an `as` cast can bypass it otherwise.
+   `^[a-zA-Z_][a-zA-Z0-9_]*$` allowlist **and a 63-character length limit** —
+   Postgres's own default `max_identifier_length` — before using it, and
+   double-quotes it in the output as defense in depth — generated migrations
+   get copy-pasted and re-templated often enough that "developer-supplied"
+   shouldn't imply "safe to splice into SQL" unconditionally. The length
+   limit matters because Postgres doesn't reject an over-long identifier, it
+   silently _truncates_ it (with only a `NOTICE`, verified live) — two
+   different intended identifiers sharing the same first 63 characters would
+   silently collide into the same actual table/column/policy name. An
+   invalid identifier throws an `InvalidSqlIdentifierError`
+   (`code: 'INVALID_SQL_IDENTIFIER'`) naming the offending value and
+   parameter — like every error this package throws, it extends the shared
+   `SecurityKitError` base. `command` gets the same treatment even though
+   it isn't identifier-shaped: it's checked against an explicit allowlist of
+   the five values Postgres's `CREATE POLICY` grammar accepts (`'ALL' |
+'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE'`) before being interpolated,
+   since its TypeScript union type only constrains callers who are
+   type-checked — a config file, a plain-JS consumer, or an `as` cast can
+   bypass it otherwise. `roles` gets the same treatment for the _array_
+   shape itself, not just each entry: a non-array `roles` (bypassing its
+   `string[]` type the same way) is rejected explicitly rather than reaching
+   a raw `TypeError`.
 2. **The tenant id value** is genuine runtime, per-request user input, and it
    is **never** interpolated into any string this module returns.
    `generateSetTenantContextSql` only ever emits the placeholder `$1` —
@@ -99,6 +108,8 @@ generateTenantIsolationPolicySql({
   roles: ['app_user'], // default: no TO clause (applies to all roles)
 });
 ```
+
+`roles: ['PUBLIC']` (Postgres's own pseudo-role, meaning "every role" — case-insensitive) is recognized and emitted unquoted (`TO PUBLIC`), the only way Postgres treats it as the pseudo-role rather than an actual role literally named "PUBLIC". You can mix it with real role names in the same list.
 
 ### Non-text tenant columns
 

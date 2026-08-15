@@ -196,5 +196,5 @@ interface is a small, explicit choice you make, not something bundled in.
 | `assertNotRateLimited(result)`       | function  | Throws `RateLimitExceededError` if `!result.allowed`, for non-HTTP call sites                                                                      |
 | `SecurityKitError`                   | class     | Base class every error in this package extends; carries a stable `.code`                                                                           |
 | `RateLimitExceededError`             | class     | Thrown by `assertNotRateLimited()`; `code: 'RATE_LIMIT_EXCEEDED'`, carries `.retryAfterMs`                                                         |
-| `InvalidRateLimitPointsError`        | class     | Thrown by `.consume()` if `points` isn't a positive, finite number                                                                                 |
+| `InvalidRateLimitPointsError`        | class     | Thrown by `.consume()` if `points` isn't a positive, finite number; `code: 'INVALID_RATE_LIMIT_POINTS'`                                            |
 | `RateLimitConfigurationError`        | class     | Thrown if `limit`/`windowMs` (`TenantRateLimiter`) or `maxBuckets` (`MemoryRateLimitStore`) is invalid; `code: 'RATE_LIMIT_CONFIGURATION_INVALID'` |

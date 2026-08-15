@@ -150,6 +150,20 @@ export function createTenantMiddleware<Req extends MinimalRequest = MinimalReque
   };
 }
 
+// The three `*TenantResolver` factories below deliberately don't share one
+// parameter convention — `headerTenantResolver(headerName?)` takes a bare
+// string, `subdomainTenantResolver(options?)` takes an options object, and
+// `claimTenantResolver(decode, claim?)` takes a function plus a bare string.
+// Each shape fits what that resolver actually needs: a header/claim name is
+// a single, simple value, so a bare optional parameter is the lightest
+// possible call site; `subdomainTenantResolver` has (today) only one config
+// knob too, but an options object leaves room to add another without a
+// breaking signature change, and reads better for what's more of a "policy"
+// than a "name"; `claimTenantResolver`'s primary, always-required input is
+// the `decode` function itself, with the claim name a secondary,
+// rarely-changed default — putting `decode` first and `claim` last mirrors
+// that. This is a deliberate per-resolver fit, not an oversight to unify.
+
 /** Resolves the tenant from a request header (default: `x-tenant-id`). */
 export function headerTenantResolver<Req extends MinimalRequest = MinimalRequest>(
   headerName = 'x-tenant-id',

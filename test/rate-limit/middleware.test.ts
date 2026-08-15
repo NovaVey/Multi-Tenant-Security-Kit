@@ -99,6 +99,26 @@ describe('assertNotRateLimited', () => {
       expect((err as RateLimitExceededError).retryAfterMs).toBe(0);
     }
   });
+
+  // Regression (LOW): a non-finite resetMs (a custom RateLimitStore
+  // legitimately expressing "never resets" as Infinity — the built-in
+  // MemoryRateLimitStore can no longer produce this once TenantRateLimiter
+  // validates limit/windowMs, but RateLimitStore is a public extension
+  // point with no such guarantee) used to flow straight through into
+  // retryAfterMs, producing an Infinity/NaN value instead of a real number.
+  for (const badResetMs of [Number.POSITIVE_INFINITY, NaN]) {
+    it(`clamps retryAfterMs to a real finite number when resetMs is ${badResetMs}`, () => {
+      try {
+        assertNotRateLimited({ allowed: false, remaining: 0, limit: 5, resetMs: badResetMs });
+        expect.unreachable();
+      } catch (err) {
+        expect(err).toBeInstanceOf(RateLimitExceededError);
+        const retryAfterMs = (err as RateLimitExceededError).retryAfterMs;
+        expect(Number.isFinite(retryAfterMs)).toBe(true);
+        expect(retryAfterMs).toBe(Number.MAX_SAFE_INTEGER);
+      }
+    });
+  }
 });
 
 describe('createRateLimitMiddleware', () => {
@@ -145,6 +165,34 @@ describe('createRateLimitMiddleware', () => {
     expect(res.headers['RateLimit-Remaining']).toBe(0);
     expect(res.headers['RateLimit-Reset']).toBe(3);
     expect(next).not.toHaveBeenCalled();
+  });
+
+  // Regression (LOW): a non-finite resetMs from the store (a custom
+  // RateLimitStore legitimately expressing "never resets" as Infinity —
+  // not producible by the built-in MemoryRateLimitStore once
+  // TenantRateLimiter validates limit/windowMs, but RateLimitStore is a
+  // public extension point with no such guarantee) used to reach
+  // res.setHeader(...) unclamped, becoming the literal string "Infinity" —
+  // not a valid RateLimit-Reset or Retry-After value.
+  it('never leaks a literal "Infinity"/"NaN" into RateLimit-Reset or Retry-After when the store returns a non-finite resetMs', async () => {
+    const store = scriptedStore({
+      allowed: false,
+      remaining: 0,
+      limit: 5,
+      resetMs: Number.POSITIVE_INFINITY,
+    });
+    const limiter = new TenantRateLimiter({ store, limit: 5, windowMs: 1000 });
+    const middleware = createRateLimitMiddleware({ limiter, getTenantId: () => 'acme' });
+
+    const req = mockReq();
+    const res = mockRes();
+    middleware(req, res, vi.fn());
+    await flush();
+
+    expect(Number.isFinite(res.headers['RateLimit-Reset'])).toBe(true);
+    expect(Number.isFinite(res.headers['Retry-After'])).toBe(true);
+    expect(res.body).toMatchObject({ error: 'rate_limit_exceeded' });
+    expect(Number.isFinite((res.body as { retryAfterMs: number }).retryAfterMs)).toBe(true);
   });
 
   it('responds 429 with Retry-After and a JSON body by default when limited', async () => {

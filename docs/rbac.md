@@ -22,6 +22,10 @@ const policy = new RbacPolicy([
 `RbacPolicy` instances are immutable — build one from your role catalog at
 startup (typically a module-level singleton) and share it across every
 `requirePermission` middleware and any manual `.can()` / `.assert()` checks.
+The constructor defensively copies (and freezes) each `permissions`/
+`inherits` array rather than storing your own array by reference, so
+mutating the `roleDefinitions` array you passed in — even one you're still
+holding onto — never affects an already-built policy.
 
 **Validation happens eagerly, in the constructor.** A duplicate role name, an
 `inherits` reference to a role that doesn't exist, or an inheritance cycle
