@@ -78,6 +78,18 @@ jobs:
       # Full gate: format, lint, typecheck, test, build, verify:dist,
       # verify:docs must all pass before a Version Packages PR is ever
       # opened against a broken main, or anything is ever published.
+      #
+      # This runs `npm run verify` a *second* time in the same job:
+      # package.json's `prepublishOnly` script also runs it, so `npx
+      # changeset publish` below (which shells out to `npm publish` per
+      # package) triggers it again implicitly. Deliberate, not an
+      # oversight — harmless, just a bit slower: this explicit step fails
+      # fast with a clean top-level log *before* any publish is even
+      # attempted, while `prepublishOnly` stays as its own independent
+      # safety net for the case this workflow doesn't cover — someone
+      # running `npm publish` by hand, directly, outside of CI entirely.
+      # For a package whose whole purpose is security tooling, that
+      # redundancy is the accepted cost, not something to trim away.
       - run: npm run verify
 
       - name: Version packages / publish

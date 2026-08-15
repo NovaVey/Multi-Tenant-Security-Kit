@@ -1,3 +1,5 @@
+import { createContext, runInContext } from 'node:vm';
+
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { AuditSinkError } from '../../src/errors.js';
@@ -242,6 +244,45 @@ describe('AuditLogger', () => {
     const [error] = onSinkError.mock.calls[0] as [AuditSinkError];
     expect(error).toBeInstanceOf(AuditSinkError);
     expect(error.sinkName).toBe('sink');
+  });
+
+  // Regression (LOW): writeToSink used `result instanceof Promise` to
+  // decide whether to await/catch a sink's return value — but `Promise`
+  // bindings are per-realm, so a genuine, spec-compliant thenable from a
+  // *different* realm (here, a real node:vm context — historically also an
+  // iframe/Worker in a browser-like environment) fails `instanceof Promise`
+  // in this realm even though it's a real promise. That used to make
+  // writeToSink treat the rejecting thenable as a synchronous return value
+  // — onSinkError never fired, and the rejection still surfaced as a
+  // genuinely unhandled rejection (able to crash the process), defeating
+  // the entire point of this method. Fixed by duck-typing on `.then`
+  // instead of `instanceof Promise`.
+  it('reports a cross-realm promise rejection via onSinkError instead of missing it entirely', async () => {
+    const onSinkError = vi.fn();
+    const crossRealmRejectingSink: AuditSink = {
+      write: () => {
+        const ctx = createContext({});
+        return runInContext(
+          'Promise.reject(new Error("cross-realm sink failure"))',
+          ctx,
+        ) as Promise<void>;
+      },
+    };
+    const logger = new AuditLogger({ sinks: [crossRealmRejectingSink], onSinkError });
+
+    expect(() => {
+      logger.log({ action: 'auth.login.succeeded', outcome: 'success' });
+    }).not.toThrow();
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(onSinkError).toHaveBeenCalledTimes(1);
+    const [error] = onSinkError.mock.calls[0] as [AuditSinkError];
+    expect(error).toBeInstanceOf(AuditSinkError);
+    // Not `error.cause instanceof Error` — the cross-realm Error instance
+    // fails that check for the exact same per-realm-binding reason, even
+    // once correctly caught. Reading `.message` is realm-agnostic.
+    expect((error.cause as Error).message).toBe('cross-realm sink failure');
   });
 
   it('does not throw when a bare null/undefined entry reaches the sinks array', () => {

@@ -69,6 +69,44 @@ describe('generateEnableRlsSql', () => {
   }
 });
 
+// Regression (LOW): identifiers were validated for character shape only,
+// never length — but Postgres's own default max_identifier_length is 63
+// (verified live: `SHOW max_identifier_length`), and a longer identifier
+// isn't rejected by Postgres, it's silently *truncated* to 63 characters
+// with only a NOTICE. Two different intended identifiers sharing the same
+// first 63 characters would silently collide into the same actual
+// table/column/policy name, live-verified before this fix.
+describe("identifier length limit (63 bytes, Postgres's own default)", () => {
+  it('accepts an identifier at exactly the 63-character limit', () => {
+    const exactly63 = 'a'.repeat(63);
+    expect(() => generateEnableRlsSql(exactly63)).not.toThrow();
+  });
+
+  it('rejects an identifier one character over the limit (64 characters)', () => {
+    const oneOver = 'a'.repeat(64);
+    expect(() => generateEnableRlsSql(oneOver)).toThrow(InvalidSqlIdentifierError);
+  });
+
+  it('rejects a much longer identifier that Postgres would otherwise silently truncate', () => {
+    const wayOver = 'a'.repeat(70);
+    expect(() => generateEnableRlsSql(wayOver)).toThrow(InvalidSqlIdentifierError);
+  });
+
+  it('applies the same limit to each segment of a multi-segment sessionSetting', () => {
+    const longSegment = 'a'.repeat(64);
+    expect(() =>
+      generateTenantIsolationPolicySql({ table: 'invoices', sessionSetting: `app.${longSegment}` }),
+    ).toThrow(InvalidSqlIdentifierError);
+  });
+
+  it('applies the same limit to role names', () => {
+    const longRole = 'a'.repeat(64);
+    expect(() =>
+      generateTenantIsolationPolicySql({ table: 'invoices', roles: [longRole] }),
+    ).toThrow(InvalidSqlIdentifierError);
+  });
+});
+
 describe('generateTenantIsolationPolicySql', () => {
   it('produces exact expected SQL using all defaults', () => {
     expect(generateTenantIsolationPolicySql({ table: 'invoices' })).toBe(
@@ -155,6 +193,39 @@ describe('generateTenantIsolationPolicySql', () => {
 
   it('omits the TO clause when roles is an empty array', () => {
     expect(generateTenantIsolationPolicySql({ table: 'invoices', roles: [] })).not.toContain('TO ');
+  });
+
+  // Regression (LOW): the PUBLIC pseudo-role (Postgres's "every role"
+  // keyword) used to get the same double-quoting treatment as every other
+  // identifier — but PUBLIC is a keyword, not a regular identifier, and
+  // quoting it changes its meaning: `TO "PUBLIC"` asks Postgres for an
+  // actual role literally named "PUBLIC", which essentially never exists,
+  // so CREATE POLICY fails at *execution* time ("role \"PUBLIC\" does not
+  // exist") — not caught by this module's own validation, since 'PUBLIC'
+  // is a syntactically valid identifier. Verified live against a real
+  // Postgres instance both ways, including the surprising fact that
+  // lowercase "public" (quoted) coincidentally succeeds despite no role
+  // named "public" actually existing.
+  describe('the PUBLIC pseudo-role', () => {
+    it('emits TO PUBLIC unquoted, not TO "PUBLIC"', () => {
+      const sql = generateTenantIsolationPolicySql({ table: 'invoices', roles: ['PUBLIC'] });
+      expect(sql).toContain('TO PUBLIC');
+      expect(sql).not.toContain('"PUBLIC"');
+    });
+
+    it('recognizes PUBLIC case-insensitively', () => {
+      const sql = generateTenantIsolationPolicySql({ table: 'invoices', roles: ['public'] });
+      expect(sql).toContain('TO PUBLIC');
+      expect(sql).not.toContain('"public"');
+    });
+
+    it('mixes PUBLIC (unquoted) with real quoted role names in the same TO clause', () => {
+      const sql = generateTenantIsolationPolicySql({
+        table: 'invoices',
+        roles: ['app_user', 'PUBLIC', 'app_readonly'],
+      });
+      expect(sql).toContain('TO "app_user", PUBLIC, "app_readonly"');
+    });
   });
 
   it('respects a custom tenantColumn, policyName, and sessionSetting', () => {

@@ -89,7 +89,22 @@ export class RbacPolicy {
           `Duplicate role definition: role "${definition.name}" is defined more than once.`,
         );
       }
-      definitions.set(definition.name, definition);
+      // Defensive copy — this class's own docs promise "RbacPolicy instances
+      // are immutable", but storing `definition` (and its `permissions`/
+      // `inherits` arrays) by reference let a caller who still held onto
+      // their original `roleDefinitions` array mutate a role's permissions
+      // *after* construction, silently changing this policy's behavior —
+      // verified live: pushing onto the original array's `permissions`
+      // before that role's first resolution changed what `.can()` returned
+      // for it, with no error or warning. Freezing the copies (not the
+      // caller's own arrays) makes a mutation attempt on what this class
+      // actually reads fail loudly instead of silently succeeding, the same
+      // defense `runWithTenant` applies to `TenantContext`.
+      definitions.set(definition.name, {
+        name: definition.name,
+        permissions: Object.freeze([...definition.permissions]),
+        ...(definition.inherits ? { inherits: Object.freeze([...definition.inherits]) } : {}),
+      });
     }
 
     for (const definition of definitions.values()) {

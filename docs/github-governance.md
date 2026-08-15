@@ -8,8 +8,13 @@ this repo (workflows, `CODEOWNERS`, `dependabot.yml`, etc.) have been pushed
 to `main`.
 
 This repo is set up at the **Standard** governance tier: required CI checks
-and one review before merge, with the security audit job kept advisory
-rather than blocking. Step 7 describes the upgrade path to a stricter tier.
+before merge, with the security audit job kept advisory rather than
+blocking. The tier's _documented default_ also calls for one required
+review before merge, but this repo currently runs with required approvals
+dropped to **0** (solo maintainer, see Step 2) — required status checks
+still gate every merge either way. Step 7 describes the upgrade path to a
+stricter tier, including raising required approvals back to 1+ once there's
+a second regular reviewer.
 
 ## Step 1 — General settings
 

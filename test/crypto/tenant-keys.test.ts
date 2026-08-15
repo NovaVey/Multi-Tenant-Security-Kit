@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { DecryptionError, InvalidKeyError, SecurityKitError } from '../../src/errors.js';
+import {
+  DecryptionError,
+  InvalidKeyError,
+  InvalidTenantIdError,
+  SecurityKitError,
+} from '../../src/errors.js';
 import { EnvKeyProvider, StaticKeyProvider, TenantEncryptor } from '../../src/crypto/index.js';
-import type { EncryptedPayload } from '../../src/crypto/index.js';
+import type { EncryptedPayload, KeyProvider } from '../../src/crypto/index.js';
 
 const MASTER_SECRET = 'a-sufficiently-long-master-secret-for-testing';
 
@@ -66,21 +71,27 @@ describe('StaticKeyProvider', () => {
     expect(provider.getDataKey('tenant-a')).toBe(key);
   });
 
-  it('throws a plain Error with a clear message for an unconfigured tenant', () => {
+  // Regression (LOW): this used to throw a plain `Error`, breaking this
+  // package's "every error extends SecurityKitError" guarantee — reachable
+  // in real production use, not just tests/fixtures, since this class's
+  // own docs endorse it for small fixed deployments too.
+  it('throws InvalidKeyError with a clear message for an unconfigured tenant', () => {
     const provider = new StaticKeyProvider({});
-    expect(() => provider.getDataKey('tenant-missing')).toThrow(
-      'no encryption key configured for tenant tenant-missing',
-    );
+    expect(() => provider.getDataKey('tenant-missing')).toThrow(InvalidKeyError);
+    expect(() => provider.getDataKey('tenant-missing')).toThrow(/tenant-missing/);
   });
 
-  it('the thrown error is not a DecryptionError (it is a configuration error)', () => {
+  it('the thrown error is a SecurityKitError, not a DecryptionError (it is a configuration error)', () => {
     const provider = new StaticKeyProvider({});
     try {
       provider.getDataKey('tenant-missing');
       expect.unreachable();
     } catch (err) {
-      expect(err).toBeInstanceOf(Error);
+      expect(err).toBeInstanceOf(SecurityKitError);
       expect(err).not.toBeInstanceOf(DecryptionError);
+      const error = err as InvalidKeyError;
+      expect(error.code).toBe('INVALID_KEY');
+      expect(error.actualLength).toBe(0);
     }
   });
 });
@@ -286,6 +297,88 @@ describe('TenantEncryptor', () => {
     const decrypted = await encryptor.decrypt('tenant-a', payload);
     expect(decrypted.toString('utf8')).toBe('async provider works');
   });
+
+  // Regression (LOW): neither encrypt() nor decrypt() validated tenantId at
+  // all — an empty string silently derived (EnvKeyProvider) or looked up
+  // (StaticKeyProvider, if coincidentally configured for '') a real,
+  // working key for "the tenant with no id", which could mask a real
+  // upstream bug (a missing field, a bad default) that produces '' instead
+  // of failing loudly.
+  describe('empty tenantId', () => {
+    it('encrypt() throws InvalidTenantIdError for an empty tenantId', async () => {
+      const encryptor = new TenantEncryptor({ keyProvider: new EnvKeyProvider(MASTER_SECRET) });
+      await expect(encryptor.encrypt('', 'data')).rejects.toThrow(InvalidTenantIdError);
+    });
+
+    it('decrypt() throws InvalidTenantIdError for an empty tenantId', async () => {
+      const encryptor = new TenantEncryptor({ keyProvider: new EnvKeyProvider(MASTER_SECRET) });
+      const payload = await encryptor.encrypt('tenant-a', 'data');
+      await expect(encryptor.decrypt('', payload)).rejects.toThrow(InvalidTenantIdError);
+    });
+
+    it('the thrown error is a SecurityKitError with a stable code', async () => {
+      const encryptor = new TenantEncryptor({ keyProvider: new EnvKeyProvider(MASTER_SECRET) });
+      try {
+        await encryptor.encrypt('', 'data');
+        expect.unreachable('should have thrown');
+      } catch (err) {
+        expect(err).toBeInstanceOf(SecurityKitError);
+        expect((err as InvalidTenantIdError).code).toBe('INVALID_TENANT_ID');
+      }
+    });
+  });
+
+  // Regression (LOW): assertKeyLength only checked `.length`, not
+  // `Buffer.isBuffer` — a misbehaving KeyProvider returning a non-Buffer
+  // value with a `.length` of exactly 32 (a string, a plain array) would
+  // pass this check and reach node:crypto's own, far less clear error
+  // instead of this module's InvalidKeyError.
+  it('throws InvalidKeyError when the KeyProvider returns a non-Buffer value, even with the right .length', async () => {
+    const fakeKey = 'x'.repeat(32); // a string, not a Buffer — .length is 32
+    const badProvider: KeyProvider = { getDataKey: () => fakeKey as unknown as Buffer };
+    const encryptor = new TenantEncryptor({ keyProvider: badProvider });
+    await expect(encryptor.encrypt('tenant-a', 'data')).rejects.toThrow(InvalidKeyError);
+  });
+
+  // Regression (LOW): decrypt() validated authTag's decoded length but not
+  // iv's — node:crypto's own GCM tag verification already fails safe for a
+  // wrong-length iv (confirmed live before this change: it's caught by the
+  // same DecryptionError-wrapping try/catch either way), so this is about a
+  // clear, deterministic failure reason rather than closing an actual gap.
+  describe('malformed iv', () => {
+    it('throws DecryptionError when iv is truncated', async () => {
+      const encryptor = new TenantEncryptor({ keyProvider: new EnvKeyProvider(MASTER_SECRET) });
+      const payload = await encryptor.encrypt('tenant-a', 'secret data');
+      const truncated: EncryptedPayload = {
+        ...payload,
+        iv: Buffer.from(payload.iv, 'base64').subarray(0, 4).toString('base64'),
+      };
+      await expect(encryptor.decrypt('tenant-a', truncated)).rejects.toThrow(DecryptionError);
+    });
+
+    it('throws DecryptionError when iv is empty', async () => {
+      const encryptor = new TenantEncryptor({ keyProvider: new EnvKeyProvider(MASTER_SECRET) });
+      const payload = await encryptor.encrypt('tenant-a', 'secret data');
+      const empty: EncryptedPayload = { ...payload, iv: '' };
+      await expect(encryptor.decrypt('tenant-a', empty)).rejects.toThrow(DecryptionError);
+    });
+
+    it('throws DecryptionError when iv is longer than 12 bytes', async () => {
+      const encryptor = new TenantEncryptor({ keyProvider: new EnvKeyProvider(MASTER_SECRET) });
+      const payload = await encryptor.encrypt('tenant-a', 'secret data');
+      const extended: EncryptedPayload = {
+        ...payload,
+        iv: Buffer.concat([Buffer.from(payload.iv, 'base64'), Buffer.alloc(4)]).toString('base64'),
+      };
+      await expect(encryptor.decrypt('tenant-a', extended)).rejects.toThrow(DecryptionError);
+    });
+  });
+
+  // encrypt()'s error-wrapping behavior (EncryptionError) needs a genuine
+  // node:crypto failure to exercise for real — see
+  // test/crypto/tenant-keys.encryption-error.test.ts, which mocks
+  // node:crypto specifically for that (isolated in its own file so the
+  // mock doesn't affect every other real-crypto test in this one).
 });
 
 /** Flips the low bit of the last byte of a base64 string, re-encoding the result. */

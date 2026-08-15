@@ -72,7 +72,22 @@ export class InvalidSqlIdentifierError extends SecurityKitError {
   }
 }
 
-/** Thrown when an RBAC policy denies a permission check. */
+/**
+ * Thrown when an RBAC policy denies a permission check.
+ *
+ * Constructor order is `(message, permission?)` — `message` first, required
+ * — deliberately unlike this file's other data-carrying errors (which take
+ * their defining value first and an *optional* `message` last, e.g.
+ * {@link CrossTenantAccessError}, {@link InvalidRateLimitPointsError}).
+ * Those can all synthesize a sensible default message from their one
+ * required value alone; `ForbiddenError` can't, because it's thrown from
+ * more than one place with genuinely different messages that don't reduce
+ * to a single derivable value — `RbacPolicy.assert()` has a specific
+ * permission and a list of the subject's roles to describe, while
+ * `requirePermission`'s "no subject could be resolved" denial has no
+ * permission at all yet still needs a message. A required `message` first
+ * is the deliberate fit for that, not an oversight.
+ */
 export class ForbiddenError extends SecurityKitError {
   readonly permission?: string | undefined;
 
@@ -126,6 +141,23 @@ export class InvalidTenantIdError extends SecurityKitError {
 export class DecryptionError extends SecurityKitError {
   constructor(message = 'Failed to decrypt payload.', options?: SecurityKitErrorOptions) {
     super(message, 'DECRYPTION_FAILED', options);
+  }
+}
+
+/**
+ * Thrown by the crypto module when encryption itself fails — a low-level
+ * `node:crypto` failure inside `cipher.update()`/`cipher.final()`, not a
+ * policy decision this module makes. Unlike `decrypt()` (which routinely
+ * fails on ordinary bad input: a wrong key, a tampered payload), `encrypt()`
+ * has no comparable authentication step and essentially never fails under
+ * normal use — this exists so a genuine failure here (a pathological input,
+ * an unexpected environment/`node:crypto` error) still comes out as a typed
+ * `SecurityKitError` instead of an unwrapped, inconsistent-with-the-rest-of-
+ * this-module raw error.
+ */
+export class EncryptionError extends SecurityKitError {
+  constructor(message = 'Failed to encrypt payload.', options?: SecurityKitErrorOptions) {
+    super(message, 'ENCRYPTION_FAILED', options);
   }
 }
 

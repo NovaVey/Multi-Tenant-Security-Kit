@@ -30,14 +30,21 @@ export type Permission = string;
 export interface RoleDefinition {
   /** Unique name for this role. Must be unique across the definitions passed to {@link RbacPolicy}. */
   name: Role;
-  /** Permissions granted directly to this role, independent of inheritance. */
-  permissions: Permission[];
+  /**
+   * Permissions granted directly to this role, independent of inheritance.
+   * Typed `readonly` because {@link RbacPolicy}'s constructor defensively
+   * copies (and freezes) this array rather than storing your reference —
+   * mutating an array you passed in after construction never affects an
+   * already-built policy, matching its own "instances are immutable" docs.
+   */
+  permissions: readonly Permission[];
   /**
    * Names of other roles this role inherits permissions from. Every name
    * here must correspond to another role in the same definition list —
-   * {@link RbacPolicy} validates this eagerly at construction time.
+   * {@link RbacPolicy} validates this eagerly at construction time. Also
+   * defensively copied and frozen, for the same reason as `permissions`.
    */
-  inherits?: Role[];
+  inherits?: readonly Role[];
 }
 
 /**

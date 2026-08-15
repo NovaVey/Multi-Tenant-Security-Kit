@@ -67,6 +67,19 @@ import type { RlsPolicyOptions } from './types.js';
 export const IDENTIFIER_PATTERN = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 
 /**
+ * Postgres's default `NAMEDATALEN`-derived identifier length limit
+ * (`SHOW max_identifier_length`) — verified live against a real Postgres
+ * instance. An identifier longer than this isn't rejected by Postgres; it's
+ * silently *truncated* to this length with only a `NOTICE`, not an error.
+ * Two different intended identifiers sharing the same first 63 characters
+ * would silently collide into the same actual table/column/policy name —
+ * exactly the kind of silent failure this module's own security-model
+ * comment (top of this file) says every interpolated value should be
+ * guarded against, not just injection-shaped ones.
+ */
+const MAX_IDENTIFIER_LENGTH = 63;
+
+/**
  * Validates that `value` is safe to use as a SQL identifier, throwing an
  * {@link InvalidSqlIdentifierError} that names both the offending value and
  * the parameter it came from if not.
@@ -74,16 +87,22 @@ export const IDENTIFIER_PATTERN = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
  * This is the single choke point every identifier accepted by this module
  * passes through — table names, column names, policy names, role names, and
  * (via {@link assertValidSessionSetting}) each dot-separated segment of a
- * Postgres GUC name. Centralizing it means the allowlist pattern and error
- * shape can't drift between entry points.
+ * Postgres GUC name. Centralizing it means the allowlist pattern, length
+ * limit, and error shape can't drift between entry points.
  */
 function assertValidIdentifier(value: string, paramName: string): void {
-  if (typeof value !== 'string' || !IDENTIFIER_PATTERN.test(value)) {
+  if (
+    typeof value !== 'string' ||
+    !IDENTIFIER_PATTERN.test(value) ||
+    value.length > MAX_IDENTIFIER_LENGTH
+  ) {
     throw new InvalidSqlIdentifierError(
       value,
       paramName,
       `Invalid SQL identifier for "${paramName}": ${JSON.stringify(value)}. ` +
-        `Identifiers must match ${IDENTIFIER_PATTERN.toString()}.`,
+        `Identifiers must match ${IDENTIFIER_PATTERN.toString()} and be at most ` +
+        `${MAX_IDENTIFIER_LENGTH} characters (Postgres's own identifier length limit — ` +
+        `longer values are silently truncated, not rejected, by Postgres itself).`,
     );
   }
 }
@@ -108,6 +127,27 @@ function assertValidSessionSetting(value: string, paramName: string): void {
 /** Double-quotes an already-validated identifier for safe interpolation into SQL text. */
 function quoteIdentifier(value: string): string {
   return `"${value}"`;
+}
+
+/**
+ * Like {@link quoteIdentifier}, but for a role name in a `TO` clause
+ * specifically — handling Postgres's `PUBLIC` pseudo-role (meaning "every
+ * role") as a special case: it's a keyword, not a regular identifier, and
+ * quoting it changes its meaning. `TO PUBLIC` (unquoted) is the pseudo-role;
+ * `TO "PUBLIC"` (quoted, this module's normal treatment for every other
+ * identifier) instead asks Postgres for an actual role literally named
+ * "PUBLIC", which essentially never exists — `CREATE POLICY` then fails at
+ * *execution* time with "role \"PUBLIC\" does not exist", not caught by
+ * this module's own generation-time validation, since `'PUBLIC'` is a
+ * syntactically valid identifier. Verified live against a real Postgres
+ * instance — including the easy-to-miss trap that `TO "public"` (quoted,
+ * *lowercase*) coincidentally succeeds despite no role named "public"
+ * actually existing, which is what makes the uppercase failure so
+ * surprising in practice. Recognized case-insensitively, since a caller
+ * reasonably intending the pseudo-role could type either casing.
+ */
+function quoteRoleIdentifier(role: string): string {
+  return role.toUpperCase() === 'PUBLIC' ? 'PUBLIC' : quoteIdentifier(role);
 }
 
 /**
@@ -251,7 +291,7 @@ export function generateTenantIsolationPolicySql(options: RlsPolicyOptions): str
   }
 
   if (options.roles && options.roles.length > 0) {
-    lines.push(`  TO ${options.roles.map(quoteIdentifier).join(', ')}`);
+    lines.push(`  TO ${options.roles.map(quoteRoleIdentifier).join(', ')}`);
   }
 
   // Postgres rejects USING on an INSERT-only policy and rejects WITH CHECK

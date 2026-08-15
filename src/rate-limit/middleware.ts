@@ -5,6 +5,24 @@ import type { TenantRateLimiter } from './limiter.js';
 import type { RateLimitResult } from './types.js';
 
 /**
+ * Clamps a possibly-non-finite value to a real, finite number — an
+ * unclamped `Infinity`/`NaN` reaching `res.setHeader(...)` becomes the
+ * literal string `"Infinity"`/`"NaN"`, not a valid `Retry-After` or
+ * `RateLimit-Reset` value. `TenantRateLimiter`'s own constructor already
+ * rejects a non-positive/non-finite `limit`/`windowMs`, so the *built-in*
+ * `MemoryRateLimitStore` can no longer produce this once wired up through
+ * it — but `RateLimitStore` is a public extension point (see
+ * "Scaling past one process" in the rate-limiting docs), and nothing
+ * requires a custom implementation to make the same promise; some
+ * legitimately want to express "never resets" as `Infinity`. Falls back to
+ * `Number.MAX_SAFE_INTEGER`, not `0` — a colossally-far-future reset is a
+ * more honest signal to a client than "resets immediately".
+ */
+function finiteOrMax(value: number): number {
+  return Number.isFinite(value) ? value : Number.MAX_SAFE_INTEGER;
+}
+
+/**
  * Throws {@link RateLimitExceededError} if `result.allowed` is `false`.
  *
  * `createRateLimitMiddleware` deliberately does *not* throw — an HTTP
@@ -17,14 +35,14 @@ import type { RateLimitResult } from './types.js';
  */
 export function assertNotRateLimited(result: RateLimitResult): void {
   if (!result.allowed) {
-    const retryAfterMs = Math.max(0, result.resetMs - Date.now());
+    const retryAfterMs = Math.max(0, finiteOrMax(result.resetMs - Date.now()));
     throw new RateLimitExceededError(retryAfterMs);
   }
 }
 
 /** Converts an epoch-ms timestamp into whole seconds remaining, floored at `0`. */
 function secondsUntil(epochMs: number): number {
-  return Math.max(0, Math.ceil((epochMs - Date.now()) / 1000));
+  return Math.max(0, Math.ceil(finiteOrMax(epochMs - Date.now()) / 1000));
 }
 
 /** Options for {@link createRateLimitMiddleware}. */
@@ -61,7 +79,7 @@ function defaultOnLimited<Req extends MinimalRequest>(
   _next: NextFunction,
   result: RateLimitResult,
 ): void {
-  const retryAfterMs = Math.max(0, result.resetMs - Date.now());
+  const retryAfterMs = Math.max(0, finiteOrMax(result.resetMs - Date.now()));
   const retryAfterSec = Math.max(1, Math.ceil(retryAfterMs / 1000));
   res.setHeader('Retry-After', retryAfterSec);
   res.status(429).json({ error: 'rate_limit_exceeded', retryAfterMs });
