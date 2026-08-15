@@ -39,6 +39,14 @@ independent key. Because HKDF is a one-way derivation, compromising or
 misusing one tenant's derived key reveals nothing about another tenant's
 key, and reveals nothing about the master secret itself.
 
+The `>= 16 bytes` check is a **length floor, not an entropy floor** — it
+catches an obvious placeholder or typo (`'x'`, `'changeme'`), not a
+weak-but-long value (16 zero bytes and `'aaaaaaaaaaaaaaaa'` both pass it and
+are exactly as guessable as they look). Generate the real secret with a
+CSPRNG — `openssl rand -base64 32`, or `node:crypto`'s `randomBytes(32)` —
+and pull it from a real secrets manager, the same as any other production
+secret.
+
 This is the pragmatic default for getting started, not the ceiling. For
 production deployments wanting real per-tenant key **rotation** (issuing a
 brand-new, unrelated key for a single tenant without touching anyone else's)

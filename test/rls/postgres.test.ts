@@ -222,6 +222,50 @@ describe('generateTenantIsolationPolicySql', () => {
     ).toThrow(InvalidSqlIdentifierError);
   });
 
+  // Regression (MEDIUM): `roles` is typed `string[]`, but that's erased at
+  // runtime the same way `command`'s union type was — a caller bypassing it
+  // (an `as` cast, a config file, a non-TS consumer) could previously reach
+  // a raw, unbranded `TypeError` instead of this module's documented
+  // `InvalidSqlIdentifierError`: a non-iterable `roles` (a number, a plain
+  // object) threw "... is not iterable" straight out of the `for...of` loop,
+  // and even a bare *string* silently iterated character-by-character
+  // (mostly "valid" single-letter identifiers) only to throw its own raw
+  // TypeError later at `.map()`. Verified live both ways before this fix.
+  describe('non-array roles', () => {
+    const nonArrayRoles = ['app_user', 42, { role: 'app_user' }, true];
+
+    for (const roles of nonArrayRoles) {
+      it(`rejects roles = ${JSON.stringify(roles)} with InvalidSqlIdentifierError, not a raw TypeError`, () => {
+        expect(() =>
+          generateTenantIsolationPolicySql({
+            table: 'invoices',
+            roles: roles as unknown as string[],
+          }),
+        ).toThrow(InvalidSqlIdentifierError);
+      });
+    }
+
+    it('names the roles param on the thrown error', () => {
+      try {
+        generateTenantIsolationPolicySql({
+          table: 'invoices',
+          roles: 'admin' as unknown as string[],
+        });
+        expect.unreachable('should have thrown');
+      } catch (err) {
+        expect(err).toBeInstanceOf(InvalidSqlIdentifierError);
+        expect((err as InvalidSqlIdentifierError).paramName).toBe('roles');
+      }
+    });
+
+    it('still accepts a real array of valid roles (sanity check the validation is not overly strict)', () => {
+      expect(() =>
+        generateTenantIsolationPolicySql({ table: 'invoices', roles: ['app_user'] }),
+      ).not.toThrow();
+      expect(() => generateTenantIsolationPolicySql({ table: 'invoices' })).not.toThrow();
+    });
+  });
+
   it('accepts a multi-segment sessionSetting where every segment is valid', () => {
     expect(() =>
       generateTenantIsolationPolicySql({

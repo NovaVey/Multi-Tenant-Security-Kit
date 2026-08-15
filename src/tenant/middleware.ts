@@ -1,3 +1,4 @@
+import { InvalidTenantIdError } from '../errors.js';
 import type { MinimalRequest, MinimalResponse, Middleware, NextFunction } from '../http/types.js';
 import { runWithTenant } from './context.js';
 import type { TenantContext } from './types.js';
@@ -20,6 +21,39 @@ export type TenantResolver<Req extends MinimalRequest = MinimalRequest> = (
  * package's public API.
  */
 export const DEFAULT_TENANT_ID_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/;
+
+/**
+ * Validates `tenantId` against `validate` (defaulting to the same
+ * `/^[a-zA-Z0-9_-]{1,64}$/` pattern {@link createTenantMiddleware} itself
+ * defaults to), throwing {@link InvalidTenantIdError} if it fails.
+ *
+ * `createTenantMiddleware` deliberately never throws for an invalid
+ * resolved tenant id — an HTTP middleware should respond directly (via
+ * `onMissing`) rather than force every caller to install an
+ * error-handling middleware, the same reasoning `createRateLimitMiddleware`
+ * and `requirePermission` follow. For call sites that want exception-based
+ * flow instead — background jobs, queue consumers, RPC/GraphQL resolvers,
+ * or any code that receives a tenant id from an untrusted source outside
+ * the HTTP request pipeline — use this function, mirroring
+ * `assertNotRateLimited`'s role for rate limiting.
+ *
+ * ```ts
+ * import { assertValidTenantId } from '@novavey/multi-tenant-security-kit/tenant';
+ *
+ * assertValidTenantId(job.tenantId); // throws InvalidTenantIdError if malformed
+ * await runWithTenant({ tenantId: job.tenantId }, () => processJob(job));
+ * ```
+ *
+ * @throws {InvalidTenantIdError} if `validate(tenantId)` returns `false`.
+ */
+export function assertValidTenantId(
+  tenantId: string,
+  validate: (tenantId: string) => boolean = (id) => DEFAULT_TENANT_ID_PATTERN.test(id),
+): void {
+  if (!validate(tenantId)) {
+    throw new InvalidTenantIdError(tenantId);
+  }
+}
 
 /**
  * Why {@link TenantMiddlewareOptions.onMissing} is running: no resolver

@@ -63,6 +63,16 @@ footgun: without it, the table owner — often the same role a migration or
 admin job connects as — silently bypasses every policy on the table.
 `generateEnableRlsSql` always emits both statements together.
 
+**`FORCE` doesn't close every bypass, though.** Postgres superusers, and any
+role granted the `BYPASSRLS` attribute, skip RLS enforcement entirely —
+`FORCE` or not — verified live against a real Postgres instance. That's
+exactly the scenario `FORCE` is usually reached for (a privileged batch job,
+an admin/support tool, an ORM migration runner), so it's easy to assume
+`FORCE` protects you there when it doesn't. Connect application/service code
+as an ordinary role with `BYPASSRLS` **not** granted; reserve
+superuser/`BYPASSRLS` connections for genuine break-glass administration
+that's meant to see every tenant's rows.
+
 `USING` (read/update/delete visibility) and `WITH CHECK` (insert / the
 post-update row) use the same predicate, so the policy can't be used to read
 one tenant's rows while writing as another — but Postgres only _accepts_

@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { InvalidTenantIdError, SecurityKitError } from '../../src/errors.js';
 import { getCurrentTenantId } from '../../src/tenant/context.js';
 import {
+  assertValidTenantId,
   claimTenantResolver,
   createTenantMiddleware,
   headerTenantResolver,
@@ -204,5 +206,56 @@ describe('createTenantMiddleware', () => {
 
     expect(next).toHaveBeenCalledTimes(1);
     expect(rejections).toEqual([boom]);
+  });
+});
+
+// Regression (MEDIUM): InvalidTenantIdError was exported and documented as
+// "thrown for a malformed tenant id" but nothing in this module actually
+// threw it — createTenantMiddleware deliberately calls onMissing instead
+// (see the test above), and nothing else validated a tenant id at all.
+// assertValidTenantId is the real throw site this error class needed,
+// mirroring assertNotRateLimited's role for rate limiting.
+describe('assertValidTenantId', () => {
+  it('does not throw for a valid tenant id', () => {
+    expect(() => assertValidTenantId('acme')).not.toThrow();
+    expect(() => assertValidTenantId('tenant-123_ABC')).not.toThrow();
+  });
+
+  it('throws InvalidTenantIdError for a tenant id that fails the default pattern', () => {
+    expect(() => assertValidTenantId('not valid! id')).toThrow(InvalidTenantIdError);
+    expect(() => assertValidTenantId('')).toThrow(InvalidTenantIdError);
+  });
+
+  it('the thrown error is a SecurityKitError with a stable code', () => {
+    try {
+      assertValidTenantId('not valid! id');
+      expect.unreachable('should have thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(InvalidTenantIdError);
+      expect(err).toBeInstanceOf(SecurityKitError);
+      expect((err as InvalidTenantIdError).code).toBe('INVALID_TENANT_ID');
+    }
+  });
+
+  it('supports a custom validate function, overriding the default pattern', () => {
+    const validate = (id: string) => id === 'only-this-one';
+    expect(() => assertValidTenantId('only-this-one', validate)).not.toThrow();
+    expect(() => assertValidTenantId('acme', validate)).toThrow(InvalidTenantIdError);
+  });
+
+  it("rejects the same shapes createTenantMiddleware's default validateTenantId does", async () => {
+    // Cross-check against the real end-to-end middleware behavior tested
+    // above, rather than just asserting against DEFAULT_TENANT_ID_PATTERN
+    // in isolation — the two are meant to reject exactly the same ids.
+    const middleware = createTenantMiddleware({ resolver: headerTenantResolver() });
+    const req = mockReq({ headers: { 'x-tenant-id': 'not valid! id' } });
+    const res = mockRes();
+    const next = vi.fn();
+
+    middleware(req, res, next);
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    expect(res.status).toHaveBeenCalledWith(400); // createTenantMiddleware: response, not a throw
+    expect(() => assertValidTenantId('not valid! id')).toThrow(InvalidTenantIdError); // this helper: a throw
   });
 });

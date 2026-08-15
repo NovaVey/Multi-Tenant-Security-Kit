@@ -21,6 +21,7 @@ export {
   headerTenantResolver,
   subdomainTenantResolver,
   claimTenantResolver,
+  assertValidTenantId,
 } from './middleware.js';
 export type {
   TenantResolver,

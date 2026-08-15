@@ -37,6 +37,17 @@ export class EnvKeyProvider implements KeyProvider {
    * shorter is almost certainly a placeholder or typo, not a real secret
    * pulled from a secrets manager, so it's rejected up front rather than
    * silently producing weak-in-practice derived keys.
+   *
+   * **This is a length floor, not an entropy floor** — for a module that
+   * derives AES-256 keys, "at least 16 bytes" only rules out the shortest,
+   * most obvious placeholders (`'x'`, `'changeme'`); it says nothing about
+   * how random those 16+ bytes actually are, and can't: 16 zero bytes, or
+   * `'aaaaaaaaaaaaaaaa'`, both pass this check and are exactly as easy to
+   * guess as they look. This check exists to catch an accidental typo/stub
+   * value, not to certify a secret as cryptographically strong — generate
+   * the real value with a CSPRNG (e.g. `openssl rand -base64 32`, or
+   * `node:crypto`'s `randomBytes(32)`) and pull it from a real secrets
+   * manager, the same way you would any other production secret.
    * @throws {InvalidKeyError} if the resulting buffer is shorter than 16 bytes.
    */
   constructor(masterSecret: string | Buffer) {
