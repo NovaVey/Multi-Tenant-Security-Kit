@@ -80,12 +80,22 @@ await encryptor.decrypt('acme', payload, aad);
 
 - the wrong tenant id (its key won't match the one `encrypt` used),
 - a tampered ciphertext or auth tag (even a single flipped byte),
+- an `authTag` that isn't exactly 16 bytes once base64-decoded — `node:crypto`
+  itself accepts any NIST SP 800-38D-legal GCM tag length (as short as 4
+  bytes), so a caller-supplied `EncryptedPayload` with a truncated tag is
+  rejected explicitly rather than silently authenticated at much weaker odds
+  than the 128 bits this module otherwise guarantees,
 - mismatched or missing `aad`.
 
 This isn't reimplemented by this module — it relies entirely on AES-GCM's
 built-in authentication-tag verification inside `decipher.final()`. Nothing
 here does a manual tag comparison, which is an easy place to introduce a
 timing side channel.
+
+A malformed master secret or a `KeyProvider` returning a key of the wrong
+length (not exactly 32 bytes) throws `InvalidKeyError` instead — from
+`EnvKeyProvider`'s constructor, or from either `encrypt`/`decrypt` if a
+custom `KeyProvider` (e.g. a KMS integration) misbehaves.
 
 ## API reference
 
@@ -99,3 +109,4 @@ timing side channel.
 | `TenantEncryptor`        | class     | `.encrypt(tenantId, plaintext, aad?)`, `.decrypt(tenantId, payload, aad?)`                    |
 | `SecurityKitError`       | class     | Base class every error in this package extends; carries a stable `.code`                      |
 | `DecryptionError`        | class     | Thrown by `.decrypt()` (bad key, tampered payload, wrong tenant); `code: 'DECRYPTION_FAILED'` |
+| `InvalidKeyError`        | class     | Thrown for a too-short master secret or wrong-length `KeyProvider` key; `code: 'INVALID_KEY'` |

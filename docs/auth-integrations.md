@@ -14,6 +14,23 @@ the same two-step pattern:
 Mount the provider's own middleware, then a small adapter middleware, then
 `createTenantMiddleware` — in that order, before any route.
 
+Every example below assigns `req.roles` (and, for Auth.js, `req.session`)
+directly — neither is a property `express.Request` declares. If you're using
+TypeScript, add this once, anywhere it's picked up by your `tsconfig.json`
+(e.g. `types/express.d.ts`), so those assignments type-check with no cast:
+
+```ts
+declare global {
+  namespace Express {
+    interface Request {
+      roles?: string[];
+      session?: unknown; // only needed for the Auth.js example below
+    }
+  }
+}
+export {};
+```
+
 ## Auth.js (`@auth/express`)
 
 Auth.js has no built-in concept of a tenant, so bake `tenantId` and `roles`
@@ -67,7 +84,19 @@ app.use(async (req, _res, next) => {
 
 app.use(
   createTenantMiddleware({
-    resolver: claimTenantResolver((req) => req.session, 'tenantId'),
+    resolver: claimTenantResolver((req) => {
+      // req.session is `unknown` (see the augmentation above) — Auth.js's
+      // own `Session` type carries no index signature, so claimTenantResolver
+      // (which needs to read an arbitrary claim off it) can't accept it
+      // directly. Narrow with a real runtime check rather than an unchecked
+      // cast: `getSession` already re-verified the session, so by the time
+      // this resolver runs `req.session` is trusted — this check exists for
+      // TypeScript, not because the value is actually suspect.
+      const session = req.session;
+      return typeof session === 'object' && session !== null
+        ? (session as Record<string, unknown>)
+        : undefined;
+    }, 'tenantId'),
   }),
 );
 ```

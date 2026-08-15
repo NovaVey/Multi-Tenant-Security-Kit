@@ -37,6 +37,28 @@ const defaultOnSinkError = (error: AuditSinkError): void => {
 };
 
 /**
+ * Best-effort, never-throwing name for a sink, used only for error
+ * reporting. `AuditSink` is a structural interface — a valid implementation
+ * doesn't have to be built from a `class`, so `sink.constructor` isn't
+ * guaranteed to exist (e.g. an object created via `Object.create(null)`),
+ * and a bare `null`/`undefined` slipping into the `sinks` array is a real,
+ * easy mistake (a conditional-sink expression evaluating to `undefined`).
+ * This function runs from inside {@link AuditLogger.writeToSink}'s own
+ * catch/rejection handlers — the exact place a second, unhandled throw
+ * would defeat the whole point of catching the first one, so it must never
+ * itself throw regardless of what `sink` turns out to be at runtime.
+ */
+function describeSink(sink: unknown): string {
+  if (sink !== null && typeof sink === 'object') {
+    const ctor = (sink as { constructor?: unknown }).constructor;
+    if (typeof ctor === 'function' && typeof ctor.name === 'string' && ctor.name.length > 0) {
+      return ctor.name;
+    }
+  }
+  return 'sink';
+}
+
+/**
  * Fans a single audit event out to every configured {@link AuditSink}.
  *
  * The core guarantee this class exists to provide is isolation: a bug or
@@ -141,11 +163,11 @@ export class AuditLogger {
       const result = sink.write(event);
       if (result instanceof Promise) {
         result.catch((cause: unknown) => {
-          this.reportError(sink.constructor.name, cause);
+          this.reportError(describeSink(sink), cause);
         });
       }
     } catch (cause) {
-      this.reportError(sink.constructor.name, cause);
+      this.reportError(describeSink(sink), cause);
     }
   }
 

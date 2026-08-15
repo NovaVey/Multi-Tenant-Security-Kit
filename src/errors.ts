@@ -129,10 +129,45 @@ export class DecryptionError extends SecurityKitError {
   }
 }
 
+/**
+ * Thrown by the `crypto` module when a key or key-derivation input has the
+ * wrong byte length — an {@link EnvKeyProvider} master secret shorter than
+ * its required minimum, or a {@link KeyProvider}-returned data key that
+ * isn't exactly the 32 bytes AES-256-GCM requires. Previously a plain
+ * `TypeError` in both cases, which broke this package's "every error
+ * extends `SecurityKitError`" guarantee for a module whose extension point
+ * (a custom `KeyProvider`, e.g. for a real KMS) makes this a genuinely
+ * reachable, not merely theoretical, failure.
+ */
+export class InvalidKeyError extends SecurityKitError {
+  /** The actual byte length that was rejected. */
+  readonly actualLength: number;
+
+  constructor(message: string, actualLength: number) {
+    super(message, 'INVALID_KEY');
+    this.actualLength = actualLength;
+  }
+}
+
 /** Thrown when an {@link RbacPolicy} (see `rbac/policy.ts`) is constructed with invalid role definitions. */
 export class RbacConfigurationError extends SecurityKitError {
   constructor(message: string) {
     super(message, 'RBAC_CONFIGURATION_INVALID');
+  }
+}
+
+/**
+ * Thrown when a {@link TenantRateLimiter} or {@link MemoryRateLimitStore} is
+ * constructed with an invalid `limit`, `windowMs`, or `maxBuckets`. A
+ * non-positive `limit`/`windowMs` isn't just a bad config value — it's a
+ * full rate-limit bypass (a `windowMs` of `0` refills every bucket to full
+ * capacity on every call), so this is validated once at construction time
+ * rather than left to fail unpredictably deep inside the store's own
+ * arithmetic.
+ */
+export class RateLimitConfigurationError extends SecurityKitError {
+  constructor(message: string) {
+    super(message, 'RATE_LIMIT_CONFIGURATION_INVALID');
   }
 }
 

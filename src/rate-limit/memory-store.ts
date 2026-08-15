@@ -1,3 +1,4 @@
+import { RateLimitConfigurationError } from '../errors.js';
 import type { RateLimitResult, RateLimitStore } from './types.js';
 
 /** Internal token-bucket state tracked per key. */
@@ -61,8 +62,22 @@ export class MemoryRateLimitStore implements RateLimitStore {
   private readonly buckets = new Map<string, Bucket>();
   private readonly maxBuckets: number;
 
+  /**
+   * @throws {RateLimitConfigurationError} if `maxBuckets` is provided and
+   * isn't a positive integer. `maxBuckets: 0` in particular isn't just an
+   * odd config value — every `consume()` call for a key inserts its bucket,
+   * then immediately evicts it as the (sole, hence "oldest") entry, so
+   * state never persists and the limiter is fully inert (verified: ten
+   * consecutive full-bucket-cost requests for the same key all succeed).
+   */
   constructor(options: MemoryRateLimitStoreOptions = {}) {
-    this.maxBuckets = options.maxBuckets ?? 50_000;
+    const maxBuckets = options.maxBuckets ?? 50_000;
+    if (!Number.isInteger(maxBuckets) || maxBuckets <= 0) {
+      throw new RateLimitConfigurationError(
+        `Invalid maxBuckets: ${JSON.stringify(options.maxBuckets)}. Must be a positive integer.`,
+      );
+    }
+    this.maxBuckets = maxBuckets;
   }
 
   /**

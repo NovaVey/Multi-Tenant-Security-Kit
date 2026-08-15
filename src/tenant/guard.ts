@@ -26,10 +26,21 @@ export function assertSameTenant(expectedTenantId: string, actualTenantId: strin
  * key lookups are the classic multi-tenant leak: nothing about the query
  * itself stops tenant A from requesting tenant B's row id.
  *
+ * Deliberately typed as `Pick<TenantScoped, 'tenantId'>` rather than plain
+ * `TenantScoped`: `TenantScoped`'s index signature (needed so
+ * {@link scopeToTenant} accepts a plain object literal — see that
+ * function's own type parameter) means only a value that *also* has an
+ * index signature can satisfy it, and a real, named domain type (an
+ * `Invoice` interface, a Prisma/Drizzle model) never does — the same
+ * TypeScript footgun this package already hit once for `MinimalRequest`
+ * (see `src/http/types.ts`). `Pick` strips the index signature back off, so
+ * `assertTenantMatches(invoice)` type-checks against any object that merely
+ * *has* a `tenantId: string` field, with no cast required.
+ *
  * @throws {TenantContextError} if no tenant context is active.
  * @throws {CrossTenantAccessError} if the resource belongs to another tenant.
  */
-export function assertTenantMatches(resource: TenantScoped): void {
+export function assertTenantMatches(resource: Pick<TenantScoped, 'tenantId'>): void {
   const currentTenantId = requireCurrentTenantId();
   assertSameTenant(currentTenantId, resource.tenantId);
 }

@@ -12,4 +12,5 @@ export {
   SecurityKitError,
   RateLimitExceededError,
   InvalidRateLimitPointsError,
+  RateLimitConfigurationError,
 } from '../errors.js';
