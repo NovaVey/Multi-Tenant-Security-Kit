@@ -155,6 +155,19 @@ function assertValidCommand(value: string): void {
  * that outcome requires deliberately dropping the second line, not simply
  * forgetting a flag.
  *
+ * `FORCE` closes the table-*owner* bypass specifically — it does **not**
+ * close every bypass. Postgres superusers, and any role granted the
+ * `BYPASSRLS` attribute, skip RLS enforcement unconditionally, `FORCE` or
+ * not — verified live against a real Postgres instance. That matters most
+ * for exactly the scenario `FORCE` is usually reached for in the first
+ * place (a privileged batch job, an admin/support tool, an ORM migration
+ * runner): if that connection authenticates as a superuser or a
+ * `BYPASSRLS` role, `FORCE ROW LEVEL SECURITY` gives you no protection
+ * against it at all, and it's easy to assume otherwise. Connect
+ * application/service code as an ordinary role with `BYPASSRLS` *not*
+ * granted; reserve superuser/`BYPASSRLS` connections for genuine
+ * break-glass administration.
+ *
  * @throws {InvalidSqlIdentifierError} if `table` is not a valid SQL identifier.
  */
 export function generateEnableRlsSql(table: string): string {
@@ -186,13 +199,14 @@ export function generateEnableRlsSql(table: string): string {
  *
  * @throws {InvalidSqlIdentifierError} if `options.table`, `options.tenantColumn`,
  * `options.policyName`, or `options.sessionSetting` is not a valid SQL
- * identifier (or, for `sessionSetting`, dot-separated identifier); if any
- * entry of `options.roles` is not a valid SQL identifier; or if
- * `options.command` is not one of `'ALL' | 'SELECT' | 'INSERT' | 'UPDATE' |
- * 'DELETE'` — the TS type only restricts this at compile time, and `command`
- * is spliced directly into the generated SQL, so a caller that bypasses the
- * type (an `as` cast, a config file, a non-TS consumer) is rejected here
- * rather than allowed to inject arbitrary SQL text.
+ * identifier (or, for `sessionSetting`, dot-separated identifier); if
+ * `options.roles` is provided but isn't an array, or any entry of it is not
+ * a valid SQL identifier; or if `options.command` is not one of `'ALL' |
+ * 'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE'` — the TS types for `roles` and
+ * `command` only restrict this at compile time, and both are spliced
+ * directly into the generated SQL, so a caller that bypasses the type (an
+ * `as` cast, a config file, a non-TS consumer) is rejected here rather than
+ * allowed to inject arbitrary SQL text.
  */
 export function generateTenantIsolationPolicySql(options: RlsPolicyOptions): string {
   const table = options.table;
@@ -206,7 +220,25 @@ export function generateTenantIsolationPolicySql(options: RlsPolicyOptions): str
   assertValidIdentifier(policyName, 'policyName');
   assertValidSessionSetting(sessionSetting, 'sessionSetting');
   assertValidCommand(command);
-  if (options.roles) {
+  if (options.roles !== undefined) {
+    // `Array.isArray` first: `RlsPolicyOptions.roles`'s `string[]` type is a
+    // compile-time constraint only, bypassable the same way `command`'s
+    // union type was (a config file, a non-TS consumer, an `as` cast). A
+    // non-array `roles` — a bare string, say — used to reach the `for...of`
+    // below directly: a non-iterable value (a number, a plain object) threw
+    // a raw, unbranded `TypeError` ("... is not iterable"), and even a
+    // *string* silently iterated character-by-character (each character
+    // often happens to be a "valid" single-letter identifier) only to throw
+    // its own raw `TypeError` later at `.map()`. Neither is this module's
+    // documented `InvalidSqlIdentifierError` contract — verified live both
+    // ways before this fix.
+    if (!Array.isArray(options.roles)) {
+      throw new InvalidSqlIdentifierError(
+        options.roles,
+        'roles',
+        `Invalid roles for generateTenantIsolationPolicySql: ${JSON.stringify(options.roles)}. Must be an array of role name strings.`,
+      );
+    }
     for (const role of options.roles) {
       assertValidIdentifier(role, 'roles');
     }
