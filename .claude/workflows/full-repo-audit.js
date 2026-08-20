@@ -5,11 +5,17 @@ export const meta = {
   whenToUse:
     'Periodic maintenance pass (new dependency majors, a stretch of unreviewed changes, before a release) or on demand. This codebase has already been through two full independent audit rounds with every severity tier fixed — this workflow exists to catch drift and genuinely new issues, not to re-litigate settled ground. Each reviewer is told that explicitly and instructed to hold a high bar: report something only if it is a real, reachable defect with a concrete failure scenario, not a stylistic preference.',
   phases: [
-    { title: 'Review', detail: 'one agent per module + three cross-cutting dimensions, in parallel' },
-    { title: 'Verify', detail: 'one independent skeptic per finding, instructed to actually try to refute it live' },
+    {
+      title: 'Review',
+      detail: 'one agent per module + three cross-cutting dimensions, in parallel',
+    },
+    {
+      title: 'Verify',
+      detail: 'one independent skeptic per finding, instructed to actually try to refute it live',
+    },
     { title: 'Report', detail: 'synthesize confirmed findings into a single ranked report' },
   ],
-}
+};
 
 const BASELINE = `Context: @novavey/multi-tenant-security-kit is a published, framework-agnostic
 TypeScript security library (tenant isolation, RBAC, per-tenant rate limiting, audit
@@ -35,7 +41,7 @@ Ground rules for this review:
   findings — do not manufacture something to seem productive. Quality over count.
 - For each real finding, report: title, severity (critical/high/medium/low), the exact
   file and location, a one-paragraph summary, and the concrete failure scenario
-  (inputs/state -> wrong output or crash).`
+  (inputs/state -> wrong output or crash).`;
 
 const REVIEW_SCHEMA = {
   type: 'object',
@@ -56,7 +62,7 @@ const REVIEW_SCHEMA = {
     },
   },
   required: ['findings'],
-}
+};
 
 const VERDICT_SCHEMA = {
   type: 'object',
@@ -65,7 +71,7 @@ const VERDICT_SCHEMA = {
     reasoning: { type: 'string' },
   },
   required: ['refuted', 'reasoning'],
-}
+};
 
 const DIMENSIONS = [
   {
@@ -104,36 +110,37 @@ const DIMENSIONS = [
     key: 'ci-and-release',
     prompt: `${BASELINE}\n\nCross-cutting review of .github/workflows/*.yml, .github/dependabot.yml, package.json's scripts/exports/publishConfig, and docs/github-governance.md in /home/user/Multi-Tenant-Security-Kit. Focus: whether the documented governance checklist still matches what's actually committed (job names required-check lists still reference, action pins, permissions), and whether the changesets release pipeline still has no real gap (a scenario where a version could publish without npm registry confirmation, or a step that fails silently).`,
   },
-]
+];
 
-phase('Review')
+phase('Review');
 const reviewed = await pipeline(
   DIMENSIONS,
   (d) => agent(d.prompt, { label: `review:${d.key}`, phase: 'Review', schema: REVIEW_SCHEMA }),
   (review, d) =>
     parallel(
-      (review?.findings ?? []).map((f) => () =>
-        agent(
-          `Adversarially try to REFUTE this finding against the real, current codebase at /home/user/Multi-Tenant-Security-Kit. Default to refuted:true if you cannot reproduce it live. Do not just re-read the reasoning below — independently re-derive it against the actual source and, wherever feasible, actually run something (a script, a test, a real Postgres check) to confirm or refute.\n\nFinding: "${f.title}" (dimension: ${d.key}, claimed severity: ${f.severity})\nFile: ${f.file}\nSummary: ${f.summary}\nClaimed failure scenario: ${f.failureScenario}`,
-          { label: `verify:${d.key}`, phase: 'Verify', schema: VERDICT_SCHEMA }
-        ).then((v) => ({ ...f, dimension: d.key, verdict: v }))
-      )
-    )
-)
+      (review?.findings ?? []).map(
+        (f) => () =>
+          agent(
+            `Adversarially try to REFUTE this finding against the real, current codebase at /home/user/Multi-Tenant-Security-Kit. Default to refuted:true if you cannot reproduce it live. Do not just re-read the reasoning below — independently re-derive it against the actual source and, wherever feasible, actually run something (a script, a test, a real Postgres check) to confirm or refute.\n\nFinding: "${f.title}" (dimension: ${d.key}, claimed severity: ${f.severity})\nFile: ${f.file}\nSummary: ${f.summary}\nClaimed failure scenario: ${f.failureScenario}`,
+            { label: `verify:${d.key}`, phase: 'Verify', schema: VERDICT_SCHEMA },
+          ).then((v) => ({ ...f, dimension: d.key, verdict: v })),
+      ),
+    ),
+);
 
 const confirmed = reviewed
   .flat()
   .filter(Boolean)
-  .filter((f) => f.verdict && f.verdict.refuted === false)
+  .filter((f) => f.verdict && f.verdict.refuted === false);
 
-log(`${confirmed.length} finding(s) survived adversarial verification.`)
+log(`${confirmed.length} finding(s) survived adversarial verification.`);
 
-phase('Report')
+phase('Report');
 const report = confirmed.length
   ? await agent(
       `Synthesize this list of independently-verified findings from a full-repo audit of /home/user/Multi-Tenant-Security-Kit into one clean report: group by severity (critical first), for each finding restate the title/file/failure scenario concisely and note which dimension found it and the verifier's own reasoning for why it survived. End with a short recommended next step (e.g. "phase these into PRs by severity, same as the two prior audit rounds"). Findings JSON:\n\n${JSON.stringify(confirmed, null, 2)}`,
-      { label: 'synthesize-report' }
+      { label: 'synthesize-report' },
     )
-  : 'No findings survived independent adversarial verification. The codebase remains clean as of this run.'
+  : 'No findings survived independent adversarial verification. The codebase remains clean as of this run.';
 
-return { findingsCount: confirmed.length, findings: confirmed, report }
+return { findingsCount: confirmed.length, findings: confirmed, report };
