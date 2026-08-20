@@ -23,7 +23,12 @@ export default tseslint.config(
     languageOptions: {
       parserOptions: {
         projectService: {
-          allowDefaultProject: ['*.config.js', '*.config.ts', 'scripts/*.mjs'],
+          allowDefaultProject: [
+            '*.config.js',
+            '*.config.ts',
+            'scripts/*.mjs',
+            '.claude/workflows/*.js',
+          ],
         },
         tsconfigRootDir: import.meta.dirname,
       },
@@ -59,6 +64,40 @@ export default tseslint.config(
       '@typescript-eslint/no-unsafe-member-access': 'off',
       '@typescript-eslint/no-unsafe-call': 'off',
       '@typescript-eslint/no-unsafe-argument': 'off',
+    },
+  },
+  {
+    // Workflow-tool scripts (see the Workflow tool's own docs): plain JS,
+    // no import — `phase`/`agent`/`pipeline`/`parallel`/`log` are globals
+    // injected by the tool's execution context at runtime, not declared or
+    // imported anywhere in the file itself. The script body also runs
+    // top-level `await`/`return` (the tool wraps it in an implicit async
+    // function at execution time) — valid at runtime, but not valid syntax
+    // for a real standalone ES module, which is exactly what crashes
+    // typescript-eslint's type-aware rules here (`no-misused-promises`
+    // throws internally trying to find a `return` statement's enclosing
+    // function, since there isn't one in this file's own AST). Disabling
+    // type-aware checking for this glob avoids that crash entirely, the
+    // same fix typescript-eslint's own docs recommend for files that don't
+    // fit the type-checked project model — this file was never going to be
+    // meaningfully type-checked against this package's own tsconfig anyway.
+    files: ['.claude/workflows/*.js'],
+    ...tseslint.configs.disableTypeChecked,
+    languageOptions: {
+      // Same parserOptions disableTypeChecked itself sets — inlined rather
+      // than spread from it, since that property chain types as `any` here
+      // and this package lints itself with @ts-check.
+      parserOptions: { program: null, project: false, projectService: false },
+      globals: {
+        phase: 'readonly',
+        agent: 'readonly',
+        pipeline: 'readonly',
+        parallel: 'readonly',
+        log: 'readonly',
+        args: 'readonly',
+        budget: 'readonly',
+        workflow: 'readonly',
+      },
     },
   },
   {
