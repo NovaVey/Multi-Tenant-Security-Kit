@@ -28,3 +28,13 @@ updates:
       - 'NovaVey'
     commit-message:
       prefix: 'chore(ci)'
+    groups:
+      # github/codeql-action ships as several separately-versioned sub-actions
+      # (init, analyze, upload-sarif, ...) used together in the same job —
+      # CodeQL's own tooling requires init/analyze to run at matching major
+      # versions. Left ungrouped, Dependabot opens one PR per sub-action,
+      # each individually landing a mismatched pair and failing CI (see
+      # PRs #44/#48). Grouping keeps every codeql-action bump in one PR.
+      codeql-action:
+        patterns:
+          - 'github/codeql-action/*'
