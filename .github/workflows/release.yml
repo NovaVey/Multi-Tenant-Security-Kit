@@ -107,7 +107,7 @@ jobs:
         # .github/dependabot.yml) tracks SHA-pinned actions against new
         # upstream tags/releases and opens a bump PR, the same way it
         # already does for every other pinned action here.
-        uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
+        uses: changesets/action@198f833dd7d863100ea6e28967bc9a9fdefadb0a # v2.1.0
         with:
           version: npx changeset version
           publish: npx changeset publish
