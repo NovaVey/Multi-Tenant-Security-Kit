@@ -95,27 +95,52 @@ jobs:
       - name: Version packages / publish
         id: changesets
         # SHA-pinned like every other third-party action in this repo (see
-        # docs/github-governance.md). `@v1` here is unusual: changesets/action
-        # maintains it as a real branch, not a floating tag, fast-forwarded
-        # to the latest v1.x.y release — so unlike a tag that just sits still,
-        # `@v1` is *designed* to move. Verified via `git ls-remote
-        # https://github.com/changesets/action v1` (resolves to a
-        # refs/heads/v1 branch) and cross-checked that its current tip
-        # matches the v1.9.0 release tag exactly. Losing the free ride on
-        # future v1.x.y patches is an accepted tradeoff — Dependabot's
-        # github-actions ecosystem (already configured, see
-        # .github/dependabot.yml) tracks SHA-pinned actions against new
-        # upstream tags/releases and opens a bump PR, the same way it
-        # already does for every other pinned action here.
-        uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
+        # docs/github-governance.md).
+        #
+        # v2 migration (from v1.9.0): a Dependabot major-version bump PR
+        # (#51) was deliberately NOT merged as-is and closed instead — it
+        # only bumped the pin, and v2.0.0 renamed nearly every input this
+        # step relies on to kebab-case. GitHub Actions silently ignores an
+        # unrecognized `with:` key rather than erroring, so a bare pin bump
+        # would have quietly dropped every one of them, verified by reading
+        # both versions' real action.yml directly (not the changelog
+        # alone): `publish` -> `publish-script` (v2 documents no default
+        # for this one, unlike version-script's documented
+        # fallback-to-`changeset version` — a real risk `npm publish` never
+        # runs at all), `version` -> `version-script`, `commit` ->
+        # `commit-message`, `title` -> `pr-title`, and most importantly
+        # `createGithubReleases` -> `create-github-releases`, which
+        # defaults to `true` in v2 — silently dropping our `false` here
+        # would make this step start creating its own tag/release again,
+        # colliding with the dedicated, incident-informed "Create git tag +
+        # GitHub Release" step below (see its own comment for why
+        # changesets/action's own publish-detection was already proven
+        # unreliable in this repo's real release history — the 0.2.0/0.2.1
+        # incidents). All five renamed below, values unchanged.
+        #
+        # `push-with-git-cli: true` — new in v2, defaults to `false` (push
+        # via the GitHub API instead of git CLI). Set explicitly to
+        # preserve this workflow's existing git-CLI push behavior rather
+        # than silently adopt a new default as a side effect of a version
+        # bump — a deliberate choice to make later if wanted, not an
+        # accident of this migration.
+        #
+        # `github-token` moved from the `env:` block to an explicit `with:`
+        # input — v2's own release notes state the GITHUB_TOKEN environment
+        # variable is "not a substitute" for it. Functionally a no-op here
+        # (both resolve to the same `${{ github.token }}` default this
+        # input already falls back to on its own), done for correctness
+        # rather than because anything was observed to break.
+        uses: changesets/action@198f833dd7d863100ea6e28967bc9a9fdefadb0a # v2.1.0
         with:
-          version: npx changeset version
-          publish: npx changeset publish
-          commit: 'chore(release): version packages'
-          title: 'chore(release): version packages'
-          createGithubReleases: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          version-script: npx changeset version
+          publish-script: npx changeset publish
+          commit-message: 'chore(release): version packages'
+          pr-title: 'chore(release): version packages'
+          create-github-releases: false
+          push-with-git-cli: true
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Both needed, for different consumers: NODE_AUTH_TOKEN is what
           # actually authenticates `npm publish` (via the .npmrc
           # actions/setup-node's registry-url wires up). NPM_TOKEN is
