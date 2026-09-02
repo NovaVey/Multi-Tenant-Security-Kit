@@ -131,7 +131,7 @@ jobs:
         # (both resolve to the same `${{ github.token }}` default this
         # input already falls back to on its own), done for correctness
         # rather than because anything was observed to break.
-        uses: changesets/action@198f833dd7d863100ea6e28967bc9a9fdefadb0a # v2.1.0
+        uses: changesets/action@8488615a623b1b9c987934bb89eae8af6a946ac1 # v2.1.1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           version-script: npx changeset version
